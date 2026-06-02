@@ -32,6 +32,7 @@ defmodule BlennyEx.MixProject do
       {:jason, "~> 1.2"},
       {:telemetry, "~> 1.0"},
       {:nimble_options, "~> 1.0"},
+      {:dstar, "~> 0.0.10"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end

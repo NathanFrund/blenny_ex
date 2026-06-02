@@ -1,24 +1,17 @@
 defmodule Blenny.Transport.SSEPlug do
   @moduledoc """
-  A Plug that opens a long-lived SSE connection using the Datastar wire format.
+  A Plug that opens a long-lived SSE connection using the Datastar wire format
+  (via the `dstar` package).
 
   Clients connect to `/sse?intent=ui,data&session_id=xxx` and receive
   Datastar-formatted SSE events (`datastar-patch-elements`,
   `datastar-patch-signals`, `datastar-execute-script`).
 
-  ## Wire Format
-
-  Messages from the Hub are formatted as Datastar SSE events.
-  Each `data` line uses Datastar's `key value` pair format:
-
-      event: datastar-patch-elements
-      data: elements <div id="status">Updated</div>
-
-      event: datastar-patch-signals
-      data: signals {"cpu":45,"mem":62}
-
-      event: datastar-execute-script
-      data: script console.log("hi")
+  Wire formatting is handled by `Dstar` — signals via `Dstar.patch_signals/2`,
+  element patches via `Dstar.patch_elements/3` (with selector extracted from
+  the HTML `id` attribute), and script execution via `Dstar.execute_script/2`.
+  Connection health is checked with `Dstar.check_connection/1` before each
+  write.
 
   ## Registration
 
@@ -62,11 +55,11 @@ defmodule Blenny.Transport.SSEPlug do
       {:blenny_message, ^conn_id, msg} ->
         case write_events(conn, msg) do
           {:ok, conn} -> sse_loop(conn, conn_id)
-          {:error, _reason} -> cleanup(conn, conn_id)
+          {:error, _conn} -> cleanup(conn, conn_id)
         end
 
       {:blenny_replaced, _new_id} ->
-        write_event(conn, "datastar-execute-script", ~s|script console.log("Session replaced")|)
+        safe_execute_script(conn, ~s|console.log("Session replaced")|)
         cleanup(conn, conn_id)
 
       {:EXIT, _from, _reason} ->
@@ -80,32 +73,52 @@ defmodule Blenny.Transport.SSEPlug do
   end
 
   defp write_events(conn, msg) do
-    with {:ok, conn} <- maybe_write_event(conn, msg[:html], "datastar-patch-elements"),
-         {:ok, conn} <- maybe_write_event(conn, msg[:signals], "datastar-patch-signals") do
-      maybe_write_script(conn, msg[:script])
+    with {:ok, conn} <- Dstar.check_connection(conn),
+         {:ok, conn} <- safe_patch_elements(conn, msg[:html]),
+         {:ok, conn} <- safe_patch_signals(conn, msg[:signals]) do
+      safe_execute_script(conn, msg[:script])
     end
   end
 
-  defp maybe_write_event(conn, nil, _event), do: {:ok, conn}
-
-  defp maybe_write_event(conn, html, "datastar-patch-elements") when is_binary(html) do
-    write_event(conn, "datastar-patch-elements", "elements #{html}")
+  defp safe_patch_elements(conn, nil), do: {:ok, conn}
+  defp safe_patch_elements(conn, html) when is_binary(html) do
+    case extract_selector(html) do
+      nil -> {:ok, conn}
+      selector ->
+        try do
+          {:ok, Dstar.patch_elements(conn, html, selector: selector)}
+        rescue
+          _ -> {:error, conn}
+        end
+    end
   end
+  defp safe_patch_elements(conn, _), do: {:ok, conn}
 
-  defp maybe_write_event(conn, signals, "datastar-patch-signals") when is_map(signals) do
-    write_event(conn, "datastar-patch-signals", "signals #{Jason.encode!(signals)}")
+  defp safe_patch_signals(conn, nil), do: {:ok, conn}
+  defp safe_patch_signals(conn, signals) when is_map(signals) do
+    try do
+      {:ok, Dstar.patch_signals(conn, signals)}
+    rescue
+      _ -> {:error, conn}
+    end
   end
+  defp safe_patch_signals(conn, _), do: {:ok, conn}
 
-  defp maybe_write_event(conn, _value, _event), do: {:ok, conn}
-
-  defp maybe_write_script(conn, nil), do: {:ok, conn}
-  defp maybe_write_script(conn, script) when is_binary(script) do
-    write_event(conn, "datastar-execute-script", script)
+  defp safe_execute_script(conn, nil), do: {:ok, conn}
+  defp safe_execute_script(conn, script) when is_binary(script) do
+    try do
+      {:ok, Dstar.execute_script(conn, script)}
+    rescue
+      _ -> {:error, conn}
+    end
   end
-  defp maybe_write_script(conn, _), do: {:ok, conn}
+  defp safe_execute_script(conn, _), do: {:ok, conn}
 
-  defp write_event(conn, event, data) do
-    chunk(conn, "event: #{event}\ndata: #{data}\n\n")
+  defp extract_selector(html) do
+    case Regex.run(~r/\sid=['"]([^'"]+)['"]/, html) do
+      [_, id] -> "##{id}"
+      nil -> nil
+    end
   end
 
   defp id do
