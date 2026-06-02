@@ -1,0 +1,38 @@
+<Layouts.app flash={@flash}>
+  <div class="mx-auto max-w-4xl px-4 py-8">
+    <h1 class="text-2xl font-bold mb-2">Blenny Dashboard (SSE)</h1>
+    <p class="text-gray-500 mb-6">
+      Live metrics delivered via <strong>Server-Sent Events (Datastar)</strong>.
+      <a href="/dashboard" class="text-blue-500 hover:underline ml-2">
+        View LiveView version
+      </a>
+    </p>
+
+    <div class="grid grid-cols-3 gap-4 mb-6">
+      <div class="rounded-lg border p-4 bg-white shadow-sm">
+        <div class="text-sm text-gray-500 mb-1">CPU Usage</div>
+        <div class="text-3xl font-bold" id="cpu"><span data-text="$.cpu">{@cpu}</span>%</div>
+      </div>
+      <div class="rounded-lg border p-4 bg-white shadow-sm">
+        <div class="text-sm text-gray-500 mb-1">Memory</div>
+        <div class="text-3xl font-bold" id="mem"><span data-text="$.mem">{@mem}</span> MB</div>
+      </div>
+      <div class="rounded-lg border p-4 bg-white shadow-sm">
+        <div class="text-sm text-gray-500 mb-1">Server Time</div>
+        <div class="text-xl font-mono" id="time" data-text="$.time">{@time}</div>
+      </div>
+    </div>
+
+    <div class="rounded-lg border p-4 bg-white shadow-sm">
+      <h2 class="text-lg font-semibold mb-2">Event Log</h2>
+      <div id="event-log" class="h-40 overflow-y-auto rounded bg-gray-50 p-3 font-mono text-sm">
+      </div>
+    </div>
+
+    <div
+      data-signals={~S|{"cpu": 0, "mem": 0, "time": "waiting..."}|}
+      data-init={~s|@get('/sse?intent=ui,data')|}
+    >
+    </div>
+  </div>
+</Layouts.app>
