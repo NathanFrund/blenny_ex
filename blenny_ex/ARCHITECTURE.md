@@ -190,6 +190,22 @@ config :blenny_ex, pub_sub: MyApp.PubSub
 Accessed at runtime via `Blenny.pub_sub/0`, used by Publisher, SSE plug,
 LiveView bridge, and Hub.
 
+### Storage Durability
+
+Auth modules default to in-memory storage (`:memory`), which is ephemeral. To
+persist user accounts across restarts, configure the auth module to use DETS:
+
+```elixir
+# config/config.exs or config/runtime.exs
+config :blenny_ex, :form_auth_store, :dets
+```
+
+The `FormAuth` module's `initialize/1` reads this config and starts the
+`Blenny.Storage.Impl.DETS` backend instead of `Blenny.Storage.Impl.InMemory`.
+Data is written to `./data/form_auth/` (DETS: `users.dets` + `usernames.dets`)
+and flushed with `:dets.sync/1` after every write. Existing accounts survive
+server restarts; the admin account is only seeded when the store is empty.
+
 ## Dependency Stack
 
 | Dependency               | Purpose                                    |

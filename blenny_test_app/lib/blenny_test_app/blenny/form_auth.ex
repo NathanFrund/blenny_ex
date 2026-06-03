@@ -7,8 +7,8 @@ defmodule BlennyTestApp.Blenny.FormAuth do
 
   ## Configuration
 
-      config :blenny_test_app, :form_auth_store, :memory   # default
-      config :blenny_test_app, :form_auth_store, :dets      # durable
+      config :blenny_ex, :form_auth_store, :memory   # default
+      config :blenny_ex, :form_auth_store, :dets      # durable
   """
 
   use Blenny.Module
@@ -46,7 +46,7 @@ defmodule BlennyTestApp.Blenny.FormAuth do
 
   @impl true
   def initialize(_app_state) do
-    store_type = Application.get_env(:blenny_test_app, :form_auth_store, :memory)
+    store_type = Application.get_env(:blenny_ex, :form_auth_store, :memory)
 
     {user_mod, user_pid, blob_pid} =
       case store_type do
