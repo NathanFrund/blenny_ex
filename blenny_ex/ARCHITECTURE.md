@@ -113,13 +113,35 @@ Modules implement `Blenny.Module`:
 - `routes/0` — HTTP routes the module contributes
 - `capabilities/0` — capability strings (boot-time conflict checks)
 - `subscriptions/0` — PubSub topic subscriptions
-- `initialize/1` — optional boot-time setup
-- `start/0` — optional start hook (e.g., spawn metrics loop)
-- `stop/0` — optional shutdown hook
+- `initialize/1` — optional boot-time setup (e.g., logging)
+- `child_spec/1` — optional child spec for supervised background process
+
+**Two kinds of modules:**
+
+| Type | child_spec/1 | Process | Use case |
+|------|-------------|---------|----------|
+| Declarative | returns `:skip` (default) | none | Static routes, templates |
+| Stateful | returns a `Supervisor.child_spec()` | supervised under `Blenny.ModuleSupervisor` | Metrics loops, timers, state machines |
+
+Stateful modules register themselves in their `init/1` using
+`{:via, Registry, {Blenny.ModuleRegistry, {scope, __MODULE__}}}` where
+`scope` is `:global` (singleton) or a per-session key (multi-tenant).
 
 Discovery is compile-time: `use Blenny.Module` installs an `@after_compile`
 hook that appends the module to `Application.get_env(:blenny_ex,
 :registered_modules)`.
+
+### Boot Sequence
+
+1. Discover and validate modules
+2. Call `initialize/1` on each module (stateless setup)
+3. For each module, call `child_spec/1`:
+   - `:skip` → module is declarative-only, skip
+   - child_spec → `DynamicSupervisor.start_child(Blenny.ModuleSupervisor, spec)`
+
+The host application must include `Blenny.ModuleRegistry` (a built-in Elixir
+`Registry`) and `Blenny.ModuleSupervisor` (a `DynamicSupervisor`) in its
+supervision tree.
 
 ### Transport Lifecycle
 
@@ -185,12 +207,13 @@ LiveView bridge, and Hub.
 ### Phase 4: Module System (✅)
 
 - `Blenny.Module` behaviour + compile-time discovery
-- Lifecycle hooks (initialize, start, stop)
+- `child_spec/1` callback for supervised background processes
+- `Blenny.ModuleRegistry` (Elixir `Registry`) + `Blenny.ModuleSupervisor` (DynamicSupervisor)
 - Per-module route registration
 
 ### Phase 5: Production Hardening (🔜)
 
-- Graceful shutdown (SIGINT/SIGTERM → module stop hooks)
+- Graceful shutdown (SIGINT/SIGTERM → DynamicSupervisor handles it)
 - Connection draining on deploy
 - Telemetry/metrics instrumentation
 - Rate limiting per connection

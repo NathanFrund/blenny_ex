@@ -1,9 +1,10 @@
 defmodule Blenny.Module.Lifecycle do
   require Logger
   @moduledoc """
-  Orchestrates the module lifecycle — initialize, start, and stop.
+  Orchestrates the module lifecycle — initialize and supervised start.
 
-  Modules are processed in registration order. Stop is called in reverse order.
+  Modules are processed in registration order. The DynamicSupervisor handles
+  stop/shutdown naturally.
   """
 
   @type state :: map()
@@ -33,49 +34,33 @@ defmodule Blenny.Module.Lifecycle do
   end
 
   @doc """
-  Starts all modules.
+  Starts supervised modules under the given DynamicSupervisor.
 
-  Calls `c:Blenny.Module.start/0` on each module that defines it.
-  Returns `:ok` or raises on first error.
+  Calls `c:Blenny.Module.child_spec/1` on each module. If it returns a child
+  spec (rather than `:skip`), starts it under the supervisor.
   """
-  @spec start_all([module()]) :: :ok
-  def start_all(modules) do
-    Enum.reduce_while(modules, :ok, fn mod, _acc ->
-      if function_exported?(mod, :start, 0) do
-        case mod.start() do
-          :ok -> {:cont, :ok}
-          {:error, reason} -> {:halt, {:error, mod, reason}}
-        end
-      else
-        {:cont, :ok}
+  @spec start_supervised([module()], atom()) :: :ok
+  def start_supervised(modules, supervisor) do
+    Enum.each(modules, fn mod ->
+      case mod.child_spec([]) do
+        :skip ->
+          :ok
+
+        child_spec ->
+          case DynamicSupervisor.start_child(supervisor, child_spec) do
+            {:ok, _pid} ->
+              :ok
+
+            {:ok, _pid, _info} ->
+              :ok
+
+            {:error, {:already_started, _pid}} ->
+              :ok
+
+            {:error, reason} ->
+              raise "Module #{inspect(mod)} failed to start under #{inspect(supervisor)}: #{inspect(reason)}"
+          end
       end
     end)
-    |> case do
-      :ok -> :ok
-      {:error, mod, reason} -> raise "Module #{inspect(mod)} start failed: #{inspect(reason)}"
-    end
-  end
-
-  @doc """
-  Stops all modules in reverse order.
-
-  Calls `c:Blenny.Module.stop/0` on each module that defines it.
-  Errors are logged but do not halt shutdown.
-  """
-  @spec stop_all([module()]) :: :ok
-  def stop_all(modules) do
-    modules
-    |> Enum.reverse()
-    |> Enum.each(fn mod ->
-      if function_exported?(mod, :stop, 0) do
-        case mod.stop() do
-          :ok -> :ok
-          {:error, reason} ->
-            Logger.warning("Module #{inspect(mod)} stop error: #{inspect(reason)}")
-        end
-      end
-    end)
-
-    :ok
   end
 end

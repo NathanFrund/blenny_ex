@@ -11,6 +11,8 @@ defmodule BlennyTestApp.Application do
       BlennyTestAppWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:blenny_test_app, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: BlennyTestApp.PubSub},
+      {Registry, keys: :unique, name: Blenny.ModuleRegistry},
+      {DynamicSupervisor, name: Blenny.ModuleSupervisor, strategy: :one_for_one},
       {Blenny.Hub, [name: Blenny.Hub, pub_sub: BlennyTestApp.PubSub]},
       BlennyTestAppWeb.Endpoint
     ]

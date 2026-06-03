@@ -3,9 +3,12 @@ defmodule Blenny.Module do
   Behaviour for Blenny modules.
 
   Modules are automatically discovered at compile time. Each module defines
-  routes, capabilities, event subscriptions, and lifecycle hooks.
+  routes, capabilities, and optionally a background process via `child_spec/1`.
 
-  ## Example
+  ## Declarative Modules (no process)
+
+  Most modules are purely declarative — they define routes and capabilities
+  but don't need a long-running process:
 
       defmodule MyApp.Blenny.Dashboard do
         use Blenny.Module
@@ -22,22 +25,50 @@ defmodule Blenny.Module do
 
         @impl true
         def capabilities, do: []
+      end
+
+  ## Stateful Modules (background process)
+
+  Modules that need a background process (metrics loops, timers, state
+  machines) implement `child_spec/1` returning a standard OTP child spec.
+  The framework starts them under `Blenny.ModuleSupervisor`:
+
+      defmodule MyApp.Blenny.Dashboard do
+        use Blenny.Module
+        use GenServer
 
         @impl true
-        def subscriptions do
-          [%{topic: "metrics:update", handler: &handle_metrics/1}]
+        def name, do: "dashboard"
+
+        @impl true
+        def routes, do: [...]
+
+        @impl true
+        def child_spec(_opts) do
+          %{
+            id: __MODULE__,
+            start: {__MODULE__, :start_link, []},
+            restart: :permanent,
+            type: :worker
+          }
+        end
+
+        def start_link(opts) do
+          GenServer.start_link(__MODULE__, opts,
+            name: {:via, Registry, {Blenny.ModuleRegistry, {:global, __MODULE__}}}
+          )
         end
 
         @impl true
-        def initialize(state) do
-          :ok
+        def init(_opts) do
+          schedule_tick()
+          {:ok, %{cpu: 0, mem: 0}}
         end
 
-        @impl true
-        def start, do: :ok
-
-        @impl true
-        def stop, do: :ok
+        def handle_info(:tick, state) do
+          # ...
+          {:noreply, state}
+        end
       end
   """
 
@@ -89,23 +120,23 @@ defmodule Blenny.Module do
   @callback initialize(state()) :: :ok | {:error, term()}
 
   @doc """
-  Called after all modules have been initialized and routes are registered.
-  Use for starting background tasks, timers, etc.
-  """
-  @callback start() :: :ok | {:error, term()}
+  Returns a child spec for starting this module under `Blenny.ModuleSupervisor`.
 
-  @doc """
-  Called during shutdown in reverse initialization order.
-  Use for cleaning up timers, closing connections, etc.
+  Return `:skip` (the default) for purely declarative modules that don't need
+  a background process. Return a `Supervisor.child_spec()` for stateful modules
+  that need supervised lifecycle (GenServer, Task, etc.).
   """
-  @callback stop() :: :ok | {:error, term()}
+  @callback child_spec(keyword()) :: :skip | Supervisor.child_spec()
 
-  @optional_callbacks initialize: 1, start: 0, stop: 0
+  @optional_callbacks initialize: 1, child_spec: 1
 
   defmacro __using__(_opts) do
     quote do
       @behaviour Blenny.Module
       @after_compile Blenny.Module
+
+      @doc false
+      def child_spec(_opts), do: :skip
     end
   end
 
