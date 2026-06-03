@@ -48,6 +48,8 @@ defmodule Blenny.Bootstrap do
   """
   @spec boot() :: :ok
   def boot do
+    Blenny.Config.validate!()
+
     modules = Blenny.Module.Loader.modules()
 
     ensure_running!(Blenny.ModuleRegistry, "Blenny.ModuleRegistry")

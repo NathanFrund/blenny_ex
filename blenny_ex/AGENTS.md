@@ -122,7 +122,7 @@ global name collisions. Two files per store: `users.dets` (primary) +
 - `Blenny.Config` reads from `Application.get_env(:blenny_ex, ...)`.
 - `Blenny.Module.Loader` checks `Application.get_env(:blenny_ex, :modules)`
   for explicit module registration (overrides auto-discovery).
-- `nimble_options` dependency is listed in `mix.exs` but currently unused.
+- `nimble_options` validates `:blenny_ex` config at boot via `Blenny.Config.validate!/0`. The schema covers `:pub_sub` (required), `:hub`, and `:transport`. Internal keys (`:module_routes`, `:registered_modules`) are excluded from validation.
 
 ---
 
@@ -361,7 +361,7 @@ blenny_test_app/
 | WebSocket transport | Raw WS sidecar | 🚫 Deferred (LiveView) | 🚫 Deferred |
 | Auth module | `form-auth.tsx` | `BlennyTestApp.Blenny.FormAuth` | ✅ |
 | Publisher API | 5 functions | 5 functions | ✅ |
-| Config validation | Valibot | `nimble_options` unused | ❌ |
+| Config validation | Valibot | `nimble_options` validates at boot | ✅ |
 | Telemetry | ? | No events | ❌ |
 | Rate limiting | ✅ | Not implemented | ❌ |
 | Graceful shutdown | ✅ | Not implemented | ❌ |
