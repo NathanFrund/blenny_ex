@@ -2,13 +2,10 @@
 
 Multi-transport hypermedia engine for Phoenix — SSE (Datastar) and LiveView.
 
-Blenny provides a reusable module system, connection registry, PubSub-based
-message routing, and zero-ceremony broadcast APIs across SSE and LiveView
-transports.
+Write unified HTML components that deliver over Server-Sent Events or LiveView
+WebSockets, routing transport based on the client's runtime environment.
 
 ## Installation
-
-Add `blenny_ex` to your `mix.exs`:
 
 ```elixir
 def deps do
@@ -18,7 +15,7 @@ def deps do
 end
 ```
 
-In an umbrella app or monorepo, use a path dependency:
+In an umbrella app or monorepo:
 
 ```elixir
 def deps do
@@ -28,26 +25,294 @@ def deps do
 end
 ```
 
+## Quickstart
+
+These steps wire Blenny into a new Phoenix app. They assume you've already
+generated an app with `mix phx.new my_app`.
+
+### Step 1: Configure PubSub
+
+Blenny needs your app's `Phoenix.PubSub` adapter. Add this to
+`config/config.exs`:
+
+```elixir
+config :blenny_ex, pub_sub: MyApp.PubSub
+```
+
+### Step 2: Update the supervision tree
+
+Open `lib/my_app/application.ex`. Add `Blenny.ModuleRegistry`,
+`Blenny.ModuleSupervisor`, and `Blenny.Hub` before your Endpoint:
+
+```elixir
+def start(_type, _args) do
+  children = [
+    MyAppWeb.Telemetry,
+    {Phoenix.PubSub, name: MyApp.PubSub},
+    {Registry, keys: :unique, name: Blenny.ModuleRegistry},
+    {DynamicSupervisor, name: Blenny.ModuleSupervisor, strategy: :one_for_one},
+    {Blenny.Hub, [name: Blenny.Hub]},
+    MyAppWeb.Endpoint
+  ]
+
+  opts = [strategy: :one_for_one, name: MyApp.Supervisor]
+  {:ok, sup} = Supervisor.start_link(children, opts)
+
+  Blenny.Bootstrap.boot()
+
+  {:ok, sup}
+end
+```
+
+The `boot/0` call discovers Blenny modules, validates them, runs their
+`initialize/1` callbacks, and starts any supervised child processes.
+
+### Step 3: Add the session plug
+
+Open `lib/my_app_web/router.ex` and add `Blenny.Plug.FetchSession` to your
+browser pipeline, **after** `fetch_session`:
+
+```elixir
+pipeline :browser do
+  plug :accepts, ["html"]
+  plug :fetch_session
+  plug Blenny.Plug.FetchSession
+  plug :fetch_live_flash
+  plug :put_root_layout, html: {MyAppWeb.Layouts, :root}
+  plug :protect_from_forgery
+  plug :put_secure_browser_headers
+end
+```
+
+`FetchSession` delegates to the registered auth module (if any) to restore the
+current user from the session cookie.
+
+### Step 4: Import the router macro
+
+Still in `router.ex`, add the import:
+
+```elixir
+import Blenny.Router
+```
+
+### Step 5: Define your first module
+
+Create `lib/my_app/blenny/dashboard_module.ex`:
+
+```elixir
+defmodule MyApp.Blenny.DashboardModule do
+  use Blenny.Module
+
+  @impl true
+  def name, do: "dashboard"
+
+  @blenny_routes {:live, "/dashboard", MyAppWeb.DashboardLive}
+
+  @impl true
+  def routes, do: @blenny_routes
+
+  @impl true
+  def capabilities, do: []
+end
+```
+
+Routes are declared via the `@blenny_routes` attribute (accumulated) and
+returned by the `routes/0` callback. Supported formats:
+
+```elixir
+# HTTP route
+@blenny_routes {:http, :get, "/path", MyAppWeb.SomeController, :action}
+
+# HTTP route with auth protection
+@blenny_routes {:http, :post, "/path", MyAppWeb.SomeController, :action, [auth: true]}
+
+# LiveView route
+@blenny_routes {:live, "/path", MyAppWeb.SomeLive}
+
+# LiveView route with action
+@blenny_routes {:live, "/path", MyAppWeb.SomeLive, :index}
+
+# LiveView route with auth protection
+@blenny_routes {:live, "/admin", MyAppWeb.AdminLive, [auth: true]}
+```
+
+### Step 6: Wire the routes
+
+Add a scope in `router.ex` that uses `blenny_modules/2`:
+
+```elixir
+scope "/" do
+  pipe_through :browser
+
+  blenny_modules("",
+    modules: [
+      MyApp.Blenny.DashboardModule
+    ]
+  )
+end
+```
+
+The first argument is a path prefix. The `:modules` list tells Blenny which
+modules to mount. Auth-protected routes are automatically wrapped with
+`RequireUser`.
+
+### Step 7: Add the SSE endpoint
+
+Outside the browser scope, add the SSE plug:
+
+```elixir
+get "/sse", Blenny.Transport.SSEPlug, []
+```
+
+This establishes long-lived SSE connections using the Datastar wire format.
+Clients connect with optional `?intent=ui,command&user_id=xxx` query params.
+
+### Step 8: Create a LiveView
+
+Create `lib/my_app_web/dashboard_live.ex` that receives real-time updates from
+Blenny modules:
+
+```elixir
+defmodule MyAppWeb.DashboardLive do
+  use MyAppWeb, :live_view
+  use Blenny.Transport.LiveViewBridge, intents: [:ui]
+
+  @impl true
+  def mount(_params, _session, socket) do
+    {:ok, assign(socket, cpu: 0.0, mem: 0.0)}
+  end
+
+  @impl true
+  def handle_info({:blenny_msg, _intent, payload}, socket) do
+    socket =
+      if payload[:signals] do
+        assign(socket,
+          cpu: payload[:signals]["cpu"],
+          mem: payload[:signals]["mem"]
+        )
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
+      <div>CPU: {@cpu}% | Memory: {@mem} MB</div>
+    </Layouts.app>
+    """
+  end
+end
+```
+
+The `LiveViewBridge` `on_mount` hook registers the connection with the Hub,
+subscribes to PubSub topics, and tears down on unmount. Your `handle_info`
+clause receives `{:blenny_msg, intent, payload}` tuples.
+
+### Step 9: Publish data from a module
+
+Make the dashboard module stateful so it emits metrics periodically:
+
+```elixir
+defmodule MyApp.Blenny.DashboardModule do
+  use Blenny.Module
+  use GenServer
+
+  @impl true
+  def name, do: "dashboard"
+
+  @blenny_routes {:live, "/dashboard", MyAppWeb.DashboardLive}
+
+  @impl true
+  def routes, do: @blenny_routes
+
+  @impl true
+  def capabilities, do: []
+
+  @impl true
+  def child_spec(_opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [[]]},
+      restart: :permanent,
+      type: :worker
+    }
+  end
+
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, opts,
+      name: {:via, Registry, {Blenny.ModuleRegistry, {:global, __MODULE__}}}
+    )
+  end
+
+  @impl true
+  def init(_opts) do
+    schedule_tick()
+    {:ok, %{}}
+  end
+
+  @impl true
+  def handle_info(:tick, state) do
+    Blenny.Publisher.broadcast_data(%{"cpu" => 42.0, "mem" => 128.5})
+    schedule_tick()
+    {:noreply, state}
+  end
+
+  defp schedule_tick do
+    Process.send_after(self(), :tick, 2_000)
+  end
+end
+```
+
+Use `Blenny.Publisher` to send data — it handles routing to the right PubSub
+topics (`:ui` intents, per-user topics, etc.).
+
+## Module Types
+
+| Type | child_spec/1 | Process | Use case |
+|------|-------------|---------|----------|
+| **Declarative** | `:skip` (default) | None | Static routes, templates |
+| **Stateful** | OTP child spec | Supervised under `Blenny.ModuleSupervisor` | Metrics loops, timers, state machines |
+
 ## Architecture
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
 │  Publisher   │────>│  PubSub Bus  │────>│  Hub (GenServer) │
 └─────────────┘     └──────────────┘     └────────┬────────┘
-                                                  │
-                    ┌─────────────────────────────┼─────┐
-                    │                             │     │
-                    ▼                             ▼     │
-          ┌─────────────────┐          ┌──────────────────┐
-          │  SSEPlug         │          │ LiveViewBridge   │
-          │  (Bandit chunk)  │          │ (on_mount hook)  │
-          └─────────────────┘          └──────────────────┘
+                                                   │
+                     ┌─────────────────────────────┼─────┐
+                     │                             │     │
+                     ▼                             ▼     │
+           ┌─────────────────┐          ┌──────────────────┐
+           │  SSEPlug         │          │ LiveViewBridge   │
+           │  (Bandit chunk)  │          │ (on_mount hook)  │
+           └─────────────────┘          └──────────────────┘
 ```
 
 - **Blenny.Module** — behaviour for defining reusable modules (routes, capabilities, lifecycle)
-- **Blenny.Publisher** — `broadcast_data/1`, `broadcast_html/1`, `execute_script/1`
-- **Blenny.Hub** — PubSub subscriber that dispatches to registered transport processes
-- **Blenny.Connection.Registry** — ETS-backed registry with session-level dedup
-- **Blenny.Transport.SSEPlug** — long-lived SSE via Bandit `send_chunked/1`
-- **Blenny.Transport.LiveViewBridge** — `on_mount` for LiveView transport integration
+- **Blenny.Publisher** — `broadcast_data/1`, `broadcast_html/1`, `execute_script/1`, `direct_data/2`, `direct_html/2`
+- **Blenny.Hub** — lifecycle coordinator, connection registry, dedup enforcement, limit enforcement
+- **Blenny.Connection.Registry** — ETS-backed registry with per-user dedup and connection tracking
+- **Blenny.Transport.SSEPlug** — long-lived SSE via Bandit `send_chunked/1` using Datastar wire format
+- **Blenny.Transport.LiveViewBridge** — `on_mount` hook for LiveView transport integration
 
+## Configuration
+
+```elixir
+# Required
+config :blenny_ex, pub_sub: MyApp.PubSub
+
+# Optional — connection limits
+config :blenny_ex, hub: [
+  max_connections: 10_000,
+  max_per_user: 100
+]
+```
+
+## License
+
+MIT

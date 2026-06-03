@@ -63,7 +63,8 @@ defmodule Blenny.Bootstrap do
     Blenny.Module.Lifecycle.initialize_all(modules, app_state)
     Blenny.Module.Lifecycle.start_supervised(modules, Blenny.ModuleSupervisor)
 
-    Logger.info("Blenny boot complete — #{Enum.count(modules)} module(s) loaded")
+    names = Enum.map_join(modules, ", ", & &1.name())
+    Logger.info("Blenny boot complete — loaded: #{names}")
     :ok
   end
 
