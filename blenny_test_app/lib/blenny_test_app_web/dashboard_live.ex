@@ -56,26 +56,6 @@ defmodule BlennyTestAppWeb.DashboardLive do
             </button>
           </div>
         </div>
-
-        <div class="rounded-lg border p-4 bg-white shadow-sm">
-          <h2 class="text-lg font-semibold mb-2">Event Log</h2>
-          <div
-            id="event-log"
-            phx-update="stream"
-            class="h-40 overflow-y-auto rounded bg-gray-50 p-3 font-mono text-sm"
-          >
-            <div :for={{id, entry} <- @streams.events} id={id} class="border-b border-gray-100 py-1">
-              <span class="text-gray-400">{entry.timestamp}</span>
-              {" "}
-              <span class={
-                (entry.type == "signal" && "text-green-600") ||
-                  (entry.type == "html" && "text-blue-600") || "text-orange-600"
-              }>
-                {entry.text}
-              </span>
-            </div>
-          </div>
-        </div>
       </div>
     </Layouts.app>
     """
@@ -90,32 +70,23 @@ defmodule BlennyTestAppWeb.DashboardLive do
       |> assign(:cpu, 0)
       |> assign(:mem, 0)
       |> assign(:time, now |> Calendar.strftime("%H:%M:%S"))
-      |> stream(:events, [])
 
     {:ok, socket}
   end
 
   @impl true
   def handle_info({:blenny_msg, _intent, payload}, socket) do
-    socket =
-      if payload[:signals] do
-        entry = %{
-          id: unique_id(),
-          type: "signal",
-          text: "signals: #{inspect(payload[:signals])}",
-          timestamp: format_timestamp()
-        }
-
+    if signals = payload[:signals] do
+      socket =
         socket
-        |> assign(:cpu, payload[:signals]["cpu"] || socket.assigns.cpu)
-        |> assign(:mem, payload[:signals]["mem"] || socket.assigns.mem)
-        |> assign(:time, format_time(payload[:signals]))
-        |> stream(:events, [entry], at: -1)
-      else
-        socket
-      end
+        |> assign(:cpu, signals["cpu"] || socket.assigns.cpu)
+        |> assign(:mem, signals["mem"] || socket.assigns.mem)
+        |> assign(:time, signals["time"] || format_time(signals))
 
-    {:noreply, socket}
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -150,10 +121,5 @@ defmodule BlennyTestAppWeb.DashboardLive do
 
   defp format_timestamp do
     BlennyTestApp.Time.format_timestamp()
-  end
-
-  defp unique_id do
-    {mega, sec, micro} = :os.timestamp()
-    "#{mega}-#{sec}-#{micro}"
   end
 end

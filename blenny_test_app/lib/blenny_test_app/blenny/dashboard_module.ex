@@ -92,23 +92,25 @@ defmodule BlennyTestApp.Blenny.DashboardModule do
 
   defp gather_metrics(%{run_before: rb, wc_before: wb}, {rn, wn}) do
     now = BlennyTestApp.Time.now()
+    now_utc = DateTime.utc_now()
 
     %{
       "cpu" => cpu_pct({rb, wb}, {rn, wn}),
       "mem" => mem_mb(),
       "time" => now |> Calendar.strftime("%H:%M:%S"),
-      "timestamp" => now |> DateTime.to_unix(:millisecond)
+      "timestamp" => now_utc |> DateTime.to_unix(:millisecond)
     }
   end
 
   defp zero_metrics do
     now = BlennyTestApp.Time.now()
+    now_utc = DateTime.utc_now()
 
     %{
       "cpu" => 0.0,
       "mem" => mem_mb(),
       "time" => now |> Calendar.strftime("%H:%M:%S"),
-      "timestamp" => now |> DateTime.to_unix(:millisecond)
+      "timestamp" => now_utc |> DateTime.to_unix(:millisecond)
     }
   end
 

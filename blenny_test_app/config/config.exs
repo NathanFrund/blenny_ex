@@ -8,8 +8,7 @@
 import Config
 
 config :blenny_test_app,
-  generators: [timestamp_type: :utc_datetime],
-  timezone: "America/New_York"
+  generators: [timestamp_type: :utc_datetime]
 
 # Configure the endpoint
 config :blenny_test_app, BlennyTestAppWeb.Endpoint,

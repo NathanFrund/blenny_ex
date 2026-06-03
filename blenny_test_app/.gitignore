@@ -4,6 +4,9 @@
 # If you run "mix test --cover", coverage assets end up here.
 /cover/
 
+# Generated SSL cert for development HTTPS
+/priv/cert/
+
 # The directory Mix downloads your dependencies sources to.
 /deps/
 
