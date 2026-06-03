@@ -23,24 +23,21 @@ defmodule Blenny.Router do
         end
       end
 
-  Routes tagged `auth: true` in the module's `routes/0` are automatically
-  wrapped with `Blenny.Plug.RequireUser` inside a `scope "/"`.
+  Routes tagged `auth: true` are automatically wrapped with
+  `Blenny.Plug.RequireUser` inside a nested `scope "/"`.
 
   ## Route Format
 
-  Modules return routes from `routes/0` as maps or tuples:
+  Modules declare routes via `@blenny_routes` module attribute with a
+  type-tagged tuple as the first element:
 
-      # Map format (current)
-      %{method: :get, path: "/signin", handler: :render_sign_in}
-      %{method: :post, path: "/avatar", handler: :handle_avatar, auth: true}
+      # Standard HTTP
+      {:http, :get, "/signin", __MODULE__, :render_sign_in}
+      {:http, :post, "/avatar", __MODULE__, :handle_avatar, [auth: true]}
 
-      # Tuple format (compact)
-      {:get, "/signin", :render_sign_in}
-      {:post, "/avatar", :handle_avatar, [auth: true]}
-
-  The handler must be an atom (Phoenix controller action name). The module
-  itself acts as the controller — it must `use Phoenix.Controller` to provide
-  the pipeline functions expected by the Phoenix router.
+      # LiveView
+      {:live, "/dashboard", MyAppWeb.DashboardLive}
+      {:live, "/dashboard", MyAppWeb.DashboardLive, :index}
   """
 
   @http_methods [:get, :post, :put, :patch, :delete]
@@ -62,18 +59,20 @@ defmodule Blenny.Router do
         mod when is_atom(mod) -> mod
       end)
 
+    route_registry = Application.get_env(:blenny_ex, :module_routes, [])
+
     entries =
       Enum.flat_map(modules, fn mod ->
-        case Kernel.function_exported?(mod, :routes, 0) do
-          true ->
-            for route <- mod.routes(), do: {mod, normalize_route(route)}
-
-          false ->
-            []
+        case Enum.find_value(route_registry, fn
+               {m, rs} when m == mod -> rs
+               _ -> nil
+             end) do
+          nil -> []
+          routes -> for route <- routes, do: normalize_route(route)
         end
       end)
 
-    {public, auth} = Enum.split_with(entries, fn {_mod, r} -> not r[:auth] end)
+    {public, auth} = Enum.split_with(entries, fn r -> not r[:auth] end)
 
     quote do
       unquote(gen_routes(public, prefix))
@@ -84,19 +83,56 @@ defmodule Blenny.Router do
   # ── Route normalization ─────────────────────────────────────────
 
   @doc false
-  def normalize_route(%{method: m, path: p, handler: h} = r) do
-    assert_valid_method!(m)
-    %{method: m, path: p, handler: h, auth: Map.get(r, :auth, false)}
+  def normalize_route({:http, method, path, plug, action, opts}) when is_list(opts) do
+    assert_valid_method!(method)
+
+    %{
+      type: :http,
+      method: method,
+      path: path,
+      plug: plug,
+      opts: action,
+      auth: Keyword.has_key?(opts, :auth)
+    }
   end
 
-  def normalize_route({method, path, handler}) do
+  def normalize_route({:http, method, path, plug, opts}) when is_list(opts) do
     assert_valid_method!(method)
-    %{method: method, path: path, handler: handler, auth: false}
+
+    %{
+      type: :http,
+      method: method,
+      path: path,
+      plug: plug,
+      opts: opts,
+      auth: Keyword.has_key?(opts, :auth)
+    }
   end
 
-  def normalize_route({method, path, handler, opts}) when is_list(opts) do
+  def normalize_route({:http, method, path, plug, action}) do
     assert_valid_method!(method)
-    %{method: method, path: path, handler: handler, auth: Keyword.get(opts, :auth, false)}
+    %{type: :http, method: method, path: path, plug: plug, opts: action, auth: false}
+  end
+
+  def normalize_route({:live, path, live_view, opts}) when is_list(opts) do
+    auth = Keyword.has_key?(opts, :auth)
+    clean = Keyword.delete(opts, :auth)
+
+    %{
+      type: :live,
+      path: path,
+      plug: live_view,
+      opts: if(clean == [], do: nil, else: clean),
+      auth: auth
+    }
+  end
+
+  def normalize_route({:live, path, live_view, action}) do
+    %{type: :live, path: path, plug: live_view, opts: action, auth: false}
+  end
+
+  def normalize_route({:live, path, live_view}) do
+    %{type: :live, path: path, plug: live_view, opts: nil, auth: false}
   end
 
   defp assert_valid_method!(method) when method in @http_methods, do: :ok
@@ -112,36 +148,43 @@ defmodule Blenny.Router do
   defp gen_routes([], _prefix), do: []
 
   defp gen_routes(entries, prefix) do
-    Enum.map(entries, fn {mod, route} ->
-      path = prefix <> route.path
-      handler = route.handler
-      method = route.method
-
-      quote do
-        unquote(method)(unquote(path), unquote(mod), unquote(handler))
-      end
-    end)
+    Enum.map(entries, &gen_route(&1, prefix))
   end
 
   defp gen_auth_routes([], _prefix), do: []
 
   defp gen_auth_routes(entries, prefix) do
-    inner =
-      Enum.map(entries, fn {mod, route} ->
-        path = prefix <> route.path
-        handler = route.handler
-        method = route.method
-
-        quote do
-          unquote(method)(unquote(path), unquote(mod), unquote(handler))
-        end
-      end)
+    inner = Enum.map(entries, &gen_route(&1, prefix))
 
     quote do
       scope "/" do
         pipe_through([Blenny.Plug.RequireUser])
         unquote_splicing(inner)
       end
+    end
+  end
+
+  defp gen_route(%{type: :http, method: method, path: path, plug: plug, opts: opts}, prefix) do
+    p = prefix <> path
+
+    quote do
+      unquote(method)(unquote(p), unquote(plug), unquote(opts))
+    end
+  end
+
+  defp gen_route(%{type: :live, path: path, plug: plug, opts: nil}, prefix) do
+    p = prefix <> path
+
+    quote do
+      live(unquote(p), unquote(plug))
+    end
+  end
+
+  defp gen_route(%{type: :live, path: path, plug: plug, opts: opts}, prefix) do
+    p = prefix <> path
+
+    quote do
+      live(unquote(p), unquote(plug), unquote(opts))
     end
   end
 end

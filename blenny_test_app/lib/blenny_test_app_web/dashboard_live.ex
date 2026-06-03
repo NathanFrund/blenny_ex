@@ -8,6 +8,12 @@ defmodule BlennyTestAppWeb.DashboardLive do
     <Layouts.app flash={@flash}>
       <div class="mx-auto max-w-4xl px-4 py-8">
         <h1 class="text-2xl font-bold mb-2">Blenny Dashboard</h1>
+
+        <div :if={@display_name} class="mb-4 flex items-center gap-2 rounded-lg border bg-green-50 p-3 text-sm">
+          <span class="text-green-700">Signed in as <strong>{@display_name}</strong></span>
+          <.link href="/auth/signout" method="post" class="ml-auto text-sm text-gray-500 hover:text-gray-700 underline">Sign out</.link>
+        </div>
+
         <p class="text-gray-500 mb-6">
           Live metrics delivered via <strong>LiveView (WebSocket)</strong>.
           <a href="/dashboard-sse" class="text-blue-500 hover:underline ml-2">
@@ -75,8 +81,9 @@ defmodule BlennyTestAppWeb.DashboardLive do
   end
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(_params, session, socket) do
     now = BlennyTestApp.Time.now()
+    display_name = session["blenny_user_display_name"]
 
     socket =
       socket
@@ -84,6 +91,7 @@ defmodule BlennyTestAppWeb.DashboardLive do
       |> assign(:mem, 0)
       |> assign(:time, now |> Calendar.strftime("%H:%M:%S"))
       |> assign(:events, [])
+      |> assign(:display_name, display_name)
 
     {:ok, socket}
   end

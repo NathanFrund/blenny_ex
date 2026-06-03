@@ -11,27 +11,44 @@ Clojure → TypeScript → Elixir). Multi-transport hypermedia engine for SSE
 ### Modules
 
 - Modules implement `Blenny.Module` behaviour via `use Blenny.Module`.
-- Auto-registered at compile time via `@after_compile` hook.
+- Auto-registered at compile time via `@before_compile` hook (replaces
+  earlier `@after_compile` — `@before_compile` stores both the module name
+  and its routes to the application env before the macro phase completes).
+- Routes must be declared via `@blenny_routes` module attribute (with
+  `accumulate: true`) in addition to the `routes/0` callback. The attribute
+  enables compile-time route discovery for `blenny_modules/2`:
+
+      # HTTP routes: {:http, method, path, plug, action}
+      @blenny_routes {:http, :get, "/signin", __MODULE__, :render_sign_in}
+      @blenny_routes {:http, :post, "/signin", __MODULE__, :handle_sign_in}
+
+      # Auth-protected HTTP: {:http, method, path, plug, action, [auth: true]}
+      @blenny_routes {:http, :post, "/avatar", __MODULE__, :handle_avatar, [auth: true]}
+
+      # LiveView routes (no action, with action, with auth):
+      @blenny_routes {:live, "/dashboard", MyAppWeb.DashboardLive}
+      @blenny_routes {:live, "/dashboard", MyAppWeb.DashboardLive, :index}
+      @blenny_routes {:live, "/admin", AdminLive, [auth: true]}
+
+      @impl true
+      def routes, do: @blenny_routes
 - Lifecycle hooks: `initialize/1` (receives app state map), `child_spec/1`
   (returns `:skip` or OTP child spec).
 - Declare `capabilities/0` like `["auth"]` for boot-time conflict detection.
-- Routes returned from `routes/0` as maps or tuples — see `Blenny.Module`
-  docs for format. `auth: true` flag wraps route with `RequireUser`.
+- Routes tagged `auth: true` are automatically wrapped with `RequireUser`.
 - Optional `auth/0` callback returns provider metadata (login route, etc.).
 
 ```elixir
 defmodule MyApp.Blenny.Dashboard do
   use Blenny.Module
 
+  @blenny_routes {:http, :get, "/dashboard", __MODULE__, :show}
+
   @impl true
   def name, do: "dashboard"
 
   @impl true
-  def routes do
-    [
-      {:get, "/dashboard", :show}
-    ]
-  end
+  def routes, do: @blenny_routes
 
   @impl true
   def capabilities, do: []
@@ -236,6 +253,7 @@ Testing summary:
 | SSEPlug (unit + integration) | 27 | ✅ |
 | LiveView integration | 4 | ✅ |
 | Storage (UUID, InMemory, DETS, FSBlob) | 37 | ✅ |
+| FormAuth (test app — sign-in, register, sign-out, crypto) | 13 | ✅ |
 | SSE dashboard integration | 4 | 🟡 Medium |
 
 ---
@@ -311,6 +329,21 @@ blenny_test_app/
 - **`blenny_modules/2` test modules:** The handler module is used as a Phoenix
   controller. It must export `init/1` (from Plug). Add `def init(_opts),
   do: {:ok, nil}` to test modules that don't `use Phoenix.Controller`.
+- **Compile-time route discovery:** `mod.routes()` cannot be called at compile
+  time because modules aren't loaded into the VM until after compilation.
+  Always declare routes via `@blenny_routes` attribute (with `accumulate: true`).
+  The `routes/0` callback should return `@blenny_routes`.
+- **`@before_compile` vs `@after_compile`:** Use `@before_compile` for module
+  registration (writing to application env). `@after_compile` fires too late
+  for macros that need to read the data in the same compilation pass.
+- **`blenny_modules/2` needs explicit `:modules` at compile time:** Module
+  auto-discovery via `Loader.modules()` is unreliable during compilation
+  because Mix may compile independent files in any order. Always pass
+  `modules: [Your.Modules]` to `blenny_modules/2` in the router, or set
+  `config :blenny_ex, modules:` in config for compile-time discovery.
+- **Plug init for test modules:** Modules used as route plugs must export
+  `def init(_opts), do: {:ok, nil}` to satisfy the Plug behaviour. Add this
+  to test modules that don't use `Phoenix.Controller`.
 
 ---
 
@@ -320,7 +353,7 @@ blenny_test_app/
 |---|---|---|---|
 | SSE transport | Datastar SDK | `dstar` Hex package | ✅ |
 | WebSocket transport | Raw WS sidecar | 🚫 Deferred (LiveView) | 🚫 Deferred |
-| Auth module | `form-auth.tsx` | Not yet built | ❌ Planned |
+| Auth module | `form-auth.tsx` | `BlennyTestApp.Blenny.FormAuth` | ✅ |
 | Publisher API | 5 functions | 5 functions | ✅ |
 | Config validation | Valibot | `nimble_options` unused | ❌ |
 | Telemetry | ? | No events | ❌ |

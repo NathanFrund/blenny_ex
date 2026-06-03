@@ -1,9 +1,11 @@
 defmodule BlennyTestAppWeb.Router do
   use BlennyTestAppWeb, :router
+  import Blenny.Router
 
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
+    plug Blenny.Plug.FetchSession
     plug :fetch_live_flash
     plug :put_root_layout, html: {BlennyTestAppWeb.Layouts, :root}
     plug :protect_from_forgery
@@ -18,9 +20,17 @@ defmodule BlennyTestAppWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+  end
 
-    live "/dashboard", DashboardLive
-    get "/dashboard-sse", SSEDashboardController, :index
+  scope "/" do
+    pipe_through :browser
+
+    blenny_modules("",
+      modules: [
+        BlennyTestApp.Blenny.FormAuth,
+        BlennyTestApp.Blenny.DashboardModule
+      ]
+    )
   end
 
   # SSE endpoint — no browser pipeline, fully-qualified module

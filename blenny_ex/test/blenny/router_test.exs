@@ -4,17 +4,15 @@ defmodule Blenny.RouterTest do
   defmodule TestRouteModule do
     use Blenny.Module
 
+    @blenny_routes {:http, :get, "/public", __MODULE__, :public_action}
+    @blenny_routes {:http, :get, "/also-public", __MODULE__, :also_public}
+    @blenny_routes {:http, :post, "/protected", __MODULE__, :protected_action, [auth: true]}
+
     @impl true
     def name, do: "rt"
 
     @impl true
-    def routes do
-      [
-        %{method: :get, path: "/public", handler: :public_action},
-        {:get, "/also-public", :also_public},
-        {:post, "/protected", :protected_action, [auth: true]}
-      ]
-    end
+    def routes, do: @blenny_routes
 
     @impl true
     def capabilities, do: []
@@ -42,7 +40,7 @@ defmodule Blenny.RouterTest do
       assert length(routes) == 3
     end
 
-    test "generates public route from map format", %{routes: routes} do
+    test "generates public route with :http tuple", %{routes: routes} do
       r = Enum.find(routes, &(&1.plug_opts == :public_action))
       assert r, "expected :public_action route"
       assert r.path == "/m/public"
@@ -50,7 +48,7 @@ defmodule Blenny.RouterTest do
       assert r.verb == :get
     end
 
-    test "generates public route from tuple format", %{routes: routes} do
+    test "generates second public route", %{routes: routes} do
       r = Enum.find(routes, &(&1.plug_opts == :also_public))
       assert r, "expected :also_public route"
       assert r.path == "/m/also-public"
@@ -68,31 +66,50 @@ defmodule Blenny.RouterTest do
   end
 
   describe "route normalization" do
-    test "normalizes map format route" do
-      result = Blenny.Router.normalize_route(%{method: :get, path: "/foo", handler: :bar})
-      assert result == %{method: :get, path: "/foo", handler: :bar, auth: false}
+    test "normalizes 5-tuple http route" do
+      result = Blenny.Router.normalize_route({:http, :get, "/foo", MyPlug, :bar})
+
+      assert result == %{
+               type: :http,
+               method: :get,
+               path: "/foo",
+               plug: MyPlug,
+               opts: :bar,
+               auth: false
+             }
     end
 
-    test "normalizes map format with auth: true" do
-      result =
-        Blenny.Router.normalize_route(%{method: :post, path: "/foo", handler: :bar, auth: true})
+    test "normalizes 6-tuple http route with auth" do
+      result = Blenny.Router.normalize_route({:http, :post, "/foo", MyPlug, :bar, [auth: true]})
 
-      assert result == %{method: :post, path: "/foo", handler: :bar, auth: true}
+      assert result == %{
+               type: :http,
+               method: :post,
+               path: "/foo",
+               plug: MyPlug,
+               opts: :bar,
+               auth: true
+             }
     end
 
-    test "normalizes 3-tuple format" do
-      result = Blenny.Router.normalize_route({:get, "/foo", :bar})
-      assert result == %{method: :get, path: "/foo", handler: :bar, auth: false}
+    test "normalizes 3-tuple live route" do
+      result = Blenny.Router.normalize_route({:live, "/dashboard", MyLive})
+      assert result == %{type: :live, path: "/dashboard", plug: MyLive, opts: nil, auth: false}
     end
 
-    test "normalizes 4-tuple format with auth option" do
-      result = Blenny.Router.normalize_route({:put, "/foo", :bar, [auth: true]})
-      assert result == %{method: :put, path: "/foo", handler: :bar, auth: true}
+    test "normalizes 4-tuple live route with action" do
+      result = Blenny.Router.normalize_route({:live, "/dashboard", MyLive, :index})
+      assert result == %{type: :live, path: "/dashboard", plug: MyLive, opts: :index, auth: false}
+    end
+
+    test "normalizes 4-tuple live route with auth opts" do
+      result = Blenny.Router.normalize_route({:live, "/admin", AdminLive, [auth: true]})
+      assert result == %{type: :live, path: "/admin", plug: AdminLive, opts: nil, auth: true}
     end
 
     test "raises on invalid HTTP method" do
       assert_raise ArgumentError, ~r{invalid HTTP method}, fn ->
-        Blenny.Router.normalize_route({:options, "/foo", :bar})
+        Blenny.Router.normalize_route({:http, :options, "/foo", MyPlug, :bar})
       end
     end
   end

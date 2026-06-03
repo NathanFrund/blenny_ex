@@ -121,21 +121,21 @@ end
 defmodule BlennyTest.RouterTestModule do
   use Blenny.Module
 
+  @blenny_routes {:http, :get, "/public", __MODULE__, :public_action}
+  @blenny_routes {:http, :get, "/also-public", __MODULE__, :also_public}
+  @blenny_routes {:http, :post, "/protected", __MODULE__, :protected_action, [auth: true]}
+
   @impl true
   def name, do: "router-test"
 
   @impl true
-  def routes do
-    [
-      %{method: :get, path: "/public", handler: :public_action},
-      {:get, "/also-public", :also_public},
-      {:post, "/protected", :protected_action, [auth: true]}
-    ]
-  end
+  def routes, do: @blenny_routes
 
   @impl true
   def capabilities, do: []
 
   @impl true
   def subscriptions, do: []
+
+  def init(_opts), do: {:ok, nil}
 end

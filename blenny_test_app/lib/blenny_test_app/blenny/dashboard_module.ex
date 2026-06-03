@@ -19,18 +19,11 @@ defmodule BlennyTestApp.Blenny.DashboardModule do
   @impl true
   def name, do: "dashboard"
 
+  @blenny_routes {:live, "/dashboard", BlennyTestAppWeb.DashboardLive}
+  @blenny_routes {:http, :get, "/dashboard-sse", BlennyTestAppWeb.SSEDashboardController, :index}
+
   @impl true
-  def routes do
-    [
-      %{method: :get, path: "/dashboard", handler: BlennyTestAppWeb.DashboardLive, auth: false},
-      %{
-        method: :get,
-        path: "/dashboard-sse",
-        handler: BlennyTestAppWeb.SSEDashboardController,
-        auth: false
-      }
-    ]
-  end
+  def routes, do: @blenny_routes
 
   @impl true
   def capabilities, do: []

@@ -72,12 +72,13 @@ defmodule Blenny.Module do
       end
   """
 
-  @type route :: %{
-          required(:method) => :get | :post | :put | :delete | :patch,
-          required(:path) => String.t(),
-          required(:handler) => atom(),
-          optional(:auth) => boolean()
-        }
+  @type route ::
+          {:http, method(), path :: String.t(), plug :: module(), opts :: term()}
+          | {:http, method(), path :: String.t(), plug :: module(), opts :: term(), keyword()}
+          | {:live, path :: String.t(), live_view :: module()}
+          | {:live, path :: String.t(), live_view :: module(), term()}
+
+  @type method :: :get | :post | :put | :patch | :delete
 
   @type subscription :: %{
           required(:topic) => String.t(),
@@ -87,7 +88,31 @@ defmodule Blenny.Module do
   @type state :: map()
 
   @doc """
-  Unique module name string.
+  List of routes this module provides.
+
+  Routes must be declared via `@blenny_routes` (module attribute with
+  `accumulate: true`) AND returned from `routes/0`. The attribute enables
+  compile-time route discovery for `Blenny.Router.blenny_modules/2`.
+
+  ## HTTP Routes
+
+      @blenny_routes {:http, :get, "/signin", __MODULE__, :render_sign_in}
+      @blenny_routes {:http, :post, "/avatar", __MODULE__, :handle_avatar}
+
+  ## LiveView Routes
+
+      @blenny_routes {:live, "/dashboard", MyAppWeb.DashboardLive}
+      @blenny_routes {:live, "/dashboard", MyAppWeb.DashboardLive, :index}
+
+  ## Auth-Protected Routes
+
+  Append an opts keyword list with `auth: true`:
+
+      @blenny_routes {:http, :post, "/avatar", __MODULE__, :handle_avatar, [auth: true]}
+      @blenny_routes {:live, "/admin", AdminLive, [auth: true]}
+
+  Routes tagged `auth: true` are automatically wrapped with
+  `Blenny.Plug.RequireUser` when mounted via `blenny_modules/2`.
   """
   @callback name() :: String.t()
 
@@ -154,7 +179,8 @@ defmodule Blenny.Module do
   defmacro __using__(_opts) do
     quote do
       @behaviour Blenny.Module
-      @after_compile Blenny.Module
+      Module.register_attribute(__MODULE__, :blenny_routes, accumulate: true)
+      @before_compile {Blenny.Module, :register_module}
 
       @doc false
       def child_spec(_opts), do: :skip
@@ -162,9 +188,13 @@ defmodule Blenny.Module do
   end
 
   @doc false
-  def __after_compile__(env, _bytecode) do
+  def register_module(env) do
     mod = env.module
     mods = Application.get_env(:blenny_ex, :registered_modules, [])
     Application.put_env(:blenny_ex, :registered_modules, [mod | mods])
+
+    routes = Module.get_attribute(mod, :blenny_routes) |> Enum.reverse()
+    all_routes = Application.get_env(:blenny_ex, :module_routes, [])
+    Application.put_env(:blenny_ex, :module_routes, [{mod, routes} | all_routes])
   end
 end
