@@ -94,20 +94,20 @@ defmodule BlennyTestAppWeb.DashboardLive do
   end
 
   @impl true
-  def handle_info({:blenny_message, _conn_id, msg}, socket) do
+  def handle_info({:blenny_msg, _intent, payload}, socket) do
     socket =
-      if msg[:signals] do
+      if payload[:signals] do
         entry = %{
           id: unique_id(),
           type: "signal",
-          text: "signals: #{inspect(msg[:signals])}",
+          text: "signals: #{inspect(payload[:signals])}",
           timestamp: format_timestamp()
         }
 
         socket
-        |> assign(:cpu, msg[:signals]["cpu"] || socket.assigns.cpu)
-        |> assign(:mem, msg[:signals]["mem"] || socket.assigns.mem)
-        |> assign(:time, format_time(msg[:signals]))
+        |> assign(:cpu, payload[:signals]["cpu"] || socket.assigns.cpu)
+        |> assign(:mem, payload[:signals]["mem"] || socket.assigns.mem)
+        |> assign(:time, format_time(payload[:signals]))
         |> stream(:events, [entry], at: -1)
       else
         socket
@@ -126,9 +126,9 @@ defmodule BlennyTestAppWeb.DashboardLive do
 
       "data" ->
         Blenny.Publisher.broadcast_data(%{
-          cpu: :rand.uniform(100) - 1,
-          mem: :rand.uniform(100) - 1,
-          manual: true
+          "cpu" => :rand.uniform(100) - 1,
+          "mem" => :rand.uniform(100) - 1,
+          "manual" => true
         })
 
       "script" ->

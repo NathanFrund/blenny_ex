@@ -3,21 +3,13 @@ defmodule Blenny.Transport.SSEPlug do
   A Plug that opens a long-lived SSE connection using the Datastar wire format
   (via the `dstar` package).
 
-  Clients connect to `/sse?intent=ui,data&session_id=xxx` and receive
+  Clients connect to `/sse?intent=ui,command&user_id=xxx` and receive
   Datastar-formatted SSE events (`datastar-patch-elements`,
   `datastar-patch-signals`, `datastar-execute-script`).
 
-  Wire formatting is handled by `Dstar` — signals via `Dstar.patch_signals/2`,
-  element patches via `Dstar.patch_elements/3` (with selector extracted from
-  the HTML `id` attribute), and script execution via `Dstar.execute_script/2`.
-  Connection health is checked with `Dstar.check_connection/1` before each
-  write.
-
-  ## Registration
-
-  Each SSE connection registers with `Blenny.Hub` using `:sse` as the
-  `conn_type`. Session-level dedup is enforced — if a session already has
-  a LiveView or SSE connection, the old one is replaced.
+  In the PubSub-direct architecture, the SSE process subscribes directly
+  to `Phoenix.PubSub` topics (`blenny:intent:*`, `blenny:user:*`) and
+  routes messages to the client based on declared intents.
   """
 
   import Plug.Conn
@@ -25,8 +17,7 @@ defmodule Blenny.Transport.SSEPlug do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    _intents = Blenny.Intent.parse_list(conn.params["intent"])
-    session_id = conn.params["session_id"] || default_session_id(conn)
+    intents = Blenny.Intent.parse_list(conn.params["intent"])
 
     conn =
       conn
@@ -39,26 +30,39 @@ defmodule Blenny.Transport.SSEPlug do
     user_id = conn.params["user_id"]
 
     conn_struct =
-      Blenny.Connection.new(conn_id, session_id, :sse,
+      Blenny.Connection.new(conn_id, :sse,
         transport_pid: self(),
-        user_id: user_id
+        user_id: user_id,
+        intents: intents
       )
 
     Process.flag(:trap_exit, true)
-    {:ok, _} = Blenny.Hub.register_connection(conn_struct)
+    :ok = Blenny.Hub.register_connection(conn_struct)
 
-    sse_loop(conn, conn_id)
+    pubsub = Blenny.pub_sub()
+    for intent <- Blenny.Intent.routing() do
+      Phoenix.PubSub.subscribe(pubsub, Blenny.Intent.to_topic(intent), link: true)
+    end
+
+    user_topic = Blenny.Intent.user_topic(user_id || conn_id)
+    Phoenix.PubSub.subscribe(pubsub, user_topic, link: true)
+
+    sse_loop(conn, conn_id, intents)
   end
 
-  defp sse_loop(conn, conn_id) do
+  defp sse_loop(conn, conn_id, intents) do
     receive do
-      {:blenny_message, ^conn_id, msg} ->
-        case write_events(conn, msg) do
-          {:ok, conn} -> sse_loop(conn, conn_id)
-          {:error, _conn} -> cleanup(conn, conn_id)
+      {:blenny_msg, intent, payload} ->
+        if Blenny.Intent.accepts?(intents, intent) do
+          case write_events(conn, payload) do
+            {:ok, conn} -> sse_loop(conn, conn_id, intents)
+            {:error, _conn} -> cleanup(conn, conn_id)
+          end
+        else
+          sse_loop(conn, conn_id, intents)
         end
 
-      {:blenny_replaced, _new_id} ->
+      {:blenny_replaced, _new_pid} ->
         safe_execute_script(conn, ~s|console.log("Session replaced")|)
         cleanup(conn, conn_id)
 
@@ -72,15 +76,16 @@ defmodule Blenny.Transport.SSEPlug do
     conn
   end
 
-  defp write_events(conn, msg) do
+  defp write_events(conn, payload) do
     with {:ok, conn} <- Dstar.check_connection(conn),
-         {:ok, conn} <- safe_patch_elements(conn, msg[:html]),
-         {:ok, conn} <- safe_patch_signals(conn, msg[:signals]) do
-      safe_execute_script(conn, msg[:script])
+         {:ok, conn} <- safe_patch_elements(conn, payload[:html]),
+         {:ok, conn} <- safe_patch_signals(conn, payload[:signals]) do
+      safe_execute_script(conn, payload[:script])
     end
   end
 
   defp safe_patch_elements(conn, nil), do: {:ok, conn}
+
   defp safe_patch_elements(conn, html) when is_binary(html) do
     case extract_selector(html) do
       nil -> {:ok, conn}
@@ -92,9 +97,11 @@ defmodule Blenny.Transport.SSEPlug do
         end
     end
   end
+
   defp safe_patch_elements(conn, _), do: {:ok, conn}
 
   defp safe_patch_signals(conn, nil), do: {:ok, conn}
+
   defp safe_patch_signals(conn, signals) when is_map(signals) do
     try do
       {:ok, Dstar.patch_signals(conn, signals)}
@@ -102,9 +109,11 @@ defmodule Blenny.Transport.SSEPlug do
       _ -> {:error, conn}
     end
   end
+
   defp safe_patch_signals(conn, _), do: {:ok, conn}
 
   defp safe_execute_script(conn, nil), do: {:ok, conn}
+
   defp safe_execute_script(conn, script) when is_binary(script) do
     try do
       {:ok, Dstar.execute_script(conn, script)}
@@ -112,6 +121,7 @@ defmodule Blenny.Transport.SSEPlug do
       _ -> {:error, conn}
     end
   end
+
   defp safe_execute_script(conn, _), do: {:ok, conn}
 
   defp extract_selector(html) do
@@ -123,15 +133,5 @@ defmodule Blenny.Transport.SSEPlug do
 
   defp id do
     :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
-  end
-
-  defp default_session_id(conn) do
-    case conn.private do
-      %{plug_session: %{"_csrf_token" => _} = session} ->
-        session["_blenny_session_id"] || id()
-
-      _ ->
-        id()
-    end
   end
 end

@@ -2,19 +2,12 @@ defmodule Blenny.Connection.Registry do
   @moduledoc """
   ETS-backed registry for tracking active Blenny connections.
 
-  Provides O(1) lookup by connection ID and indexed lookups by session ID
-  and user ID. Enforces session-level exclusivity — at most one connection
-  per session_id.
-
-  ## Session Dedup
-
-  When a client connects with a session_id that already has a connection,
-  the registry can replace the existing connection (closing the old one)
-  or reject the new one, depending on `replace_existing?`.
+  Provides O(1) lookup by connection ID, per-user lookups, and dedup-key
+  lookups for enforcing at-most-one connection per `{user_id, conn_type}`.
   """
 
   @table_name :blenny_connections
-  @session_index :blenny_connections_by_session
+  @dedup_index :blenny_connections_by_dedup
   @user_index :blenny_connections_by_user
 
   @doc """
@@ -24,41 +17,22 @@ defmodule Blenny.Connection.Registry do
   def start_link do
     tid = :ets.new(@table_name, [:ordered_set, :public, :named_table, write_concurrency: true])
 
-    :ets.new(@session_index, [:bag, :public, :named_table, write_concurrency: true])
+    :ets.new(@dedup_index, [:set, :public, :named_table, write_concurrency: true])
     :ets.new(@user_index, [:bag, :public, :named_table, write_concurrency: true])
 
     {:ok, tid}
   end
 
   @doc """
-  Registers a connection.
+  Registers a connection into the ETS tables.
 
   Returns `{:ok, conn}` on success.
-
-  If `:replace_existing` is `true` and the session already has a connection,
-  the old connection is removed and the new one takes its place.
-  Returns `{:error, :session_already_connected}` if `:replace_existing` is
-  `false` and the session already has a connection.
   """
-  @spec register(Blenny.Connection.t(), keyword()) ::
-          {:ok, Blenny.Connection.t()} | {:error, :session_already_connected}
-  def register(%Blenny.Connection{} = conn, opts \\ []) do
-    replace? = Keyword.get(opts, :replace_existing, true)
-
-    case lookup_by_session(conn.session_id) do
-      [existing] when replace? ->
-        unregister(existing.id)
-
-      [_existing] ->
-        {:error, :session_already_connected}
-
-      [] ->
-        :ok
-    end
-
+  @spec register(Blenny.Connection.t()) :: {:ok, Blenny.Connection.t()}
+  def register(%Blenny.Connection{} = conn) do
     true = :ets.insert(@table_name, {conn.id, conn})
+    true = :ets.insert(@dedup_index, {{dedup_key(conn), conn.conn_type}, conn.id})
 
-    true = :ets.insert(@session_index, {conn.session_id, conn.id})
     if conn.user_id do
       true = :ets.insert(@user_index, {conn.user_id, conn.id})
     end
@@ -77,7 +51,7 @@ defmodule Blenny.Connection.Registry do
 
       conn ->
         true = :ets.delete(@table_name, conn_id)
-        true = :ets.delete_object(@session_index, {conn.session_id, conn_id})
+        true = :ets.delete(@dedup_index, {dedup_key(conn), conn.conn_type})
 
         if conn.user_id do
           true = :ets.delete_object(@user_index, {conn.user_id, conn_id})
@@ -99,26 +73,28 @@ defmodule Blenny.Connection.Registry do
   end
 
   @doc """
-  Looks up connections for a user ID.
+  Looks up an existing connection by dedup key and conn type.
+
+  The dedup key is `user_id` if present, or the connection's id as fallback.
+  Since the dedup index is a `:set`, each `{dedup_key, conn_type}` has at
+  most one entry. Returns `nil` if no connection exists.
+  """
+  @spec lookup_by_dedup_key(String.t(), atom()) :: Blenny.Connection.t() | nil
+  def lookup_by_dedup_key(dedup_key, conn_type) do
+    case :ets.lookup(@dedup_index, {dedup_key, conn_type}) do
+      [{{^dedup_key, ^conn_type}, conn_id}] -> lookup(conn_id)
+      [] -> nil
+    end
+  end
+
+  @doc """
+  Looks up all connections for a user ID.
   """
   @spec lookup_by_user(String.t()) :: [Blenny.Connection.t()]
   def lookup_by_user(user_id) when is_binary(user_id) do
     @user_index
     |> :ets.lookup(user_id)
     |> Enum.map(fn {^user_id, conn_id} -> lookup(conn_id) end)
-    |> Enum.reject(&is_nil/1)
-  end
-
-  @doc """
-  Looks up the connection for a session ID.
-
-  Returns `[conn]` or `[]`. Session-level dedup ensures at most one connection.
-  """
-  @spec lookup_by_session(String.t()) :: [Blenny.Connection.t()]
-  def lookup_by_session(session_id) when is_binary(session_id) do
-    @session_index
-    |> :ets.lookup(session_id)
-    |> Enum.map(fn {^session_id, conn_id} -> lookup(conn_id) end)
     |> Enum.reject(&is_nil/1)
   end
 
@@ -146,8 +122,11 @@ defmodule Blenny.Connection.Registry do
   @spec clear() :: :ok
   def clear do
     :ets.delete_all_objects(@table_name)
-    :ets.delete_all_objects(@session_index)
+    :ets.delete_all_objects(@dedup_index)
     :ets.delete_all_objects(@user_index)
     :ok
   end
+
+  defp dedup_key(%{user_id: user_id}) when is_binary(user_id), do: user_id
+  defp dedup_key(%{id: id}), do: id
 end
