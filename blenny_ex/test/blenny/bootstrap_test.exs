@@ -15,6 +15,7 @@ defmodule Blenny.BootstrapTest do
     on_exit(fn ->
       Application.delete_env(:blenny_ex, :pub_sub)
       Application.delete_env(:blenny_ex, :modules)
+      Blenny.AuthRegistry.stop()
     end)
 
     :ok

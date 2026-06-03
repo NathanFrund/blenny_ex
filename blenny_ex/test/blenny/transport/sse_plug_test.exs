@@ -469,6 +469,4 @@ defmodule Blenny.Transport.SSEPlugTest do
       :nomatch -> :infinity
     end
   end
-
-
 end

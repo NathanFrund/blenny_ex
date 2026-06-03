@@ -58,7 +58,12 @@ defmodule Blenny.Test.SSEHelpers do
   raw data after the publish.
   """
   def publish_and_read(pubsub, intent, payload, socket, timeout \\ 500) do
-    Phoenix.PubSub.broadcast(pubsub, Blenny.Intent.to_topic(intent), {:blenny_msg, intent, payload})
+    Phoenix.PubSub.broadcast(
+      pubsub,
+      Blenny.Intent.to_topic(intent),
+      {:blenny_msg, intent, payload}
+    )
+
     :timer.sleep(50)
     read_raw(socket, timeout)
   end

@@ -53,6 +53,8 @@ defmodule Blenny.Bootstrap do
     ensure_running!(Blenny.ModuleRegistry, "Blenny.ModuleRegistry")
     ensure_running!(Blenny.ModuleSupervisor, "Blenny.ModuleSupervisor")
 
+    Blenny.AuthRegistry.start()
+
     app_state = %{
       pub_sub: Blenny.pub_sub()
     }

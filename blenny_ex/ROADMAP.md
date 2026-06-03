@@ -26,12 +26,16 @@ to Hex as an independent dependency; the test app ships in the same monorepo.
    host apps add it as a dependency
 6. **Publisher-first API** — modules call `Blenny.Publisher` to reach
    clients; they never write to transport sockets directly
-7. **Auth in the host app** — Blenny does not define auth callbacks or
-   middleware. Route security uses standard Phoenix `pipe_through`;
-   component access checks `socket.assigns.current_user`. Documented
-   recipes cover common patterns.
-8. **No framework lock-in** — bring your own auth, database, and
-   session management; Blenny handles transport routing and lifecycle
+7. **Auth via modules** — Auth is delivered by modules declaring
+   `capabilities: [:auth]`. The module owns its storage strategy, UI,
+   and cryptography. It registers verification plugs with
+   `Blenny.AuthRegistry` during initialization. Blenny provides the
+   `Blenny.Router` macro for auto-mounting, and pipeline plugs
+   (`FetchSession`, `RequireUser`, `RequireRole`) that delegate to
+   the registered provider. Swapping the module swaps the entire auth UX.
+8. **No framework lock-in** — bring your own database and session
+   management; Blenny handles transport routing, lifecycle, and
+   auth plumbing
 
 ## Definition of Done
 
@@ -61,7 +65,7 @@ subscriptions, lifecycle, capabilities — flows through `Blenny.Module`.
 | Feature | Status | What's Needed |
 |---------|--------|---------------|
 | Behaviour with all callbacks (`name/0`, `routes/0`, `capabilities/0`, `subscriptions/0`, `initialize/1`, `child_spec/1`) | ✅ Done | — |
-| `auth/0` callback | 🚫 Deferred | Auth stays in host app. See Design Principle #7 and Auth System section. |
+| `auth/0` callback | 🟡 In Progress | Module returns provider metadata (login route, etc.). Registered in `Blenny.AuthRegistry` at boot. |
 | Compile-time discovery via `@after_compile` | ✅ Done | — |
 | Declarative modules (`:skip` child_spec) | ✅ Done | — |
 | Stateful modules (DynamicSupervisor) | ✅ Done | — |
@@ -128,9 +132,9 @@ not re-implementing what Phoenix already provides.
 
 | Feature | Status | What's Needed |
 |---------|--------|---------------|
-| Module `auth/0` callback | 🚫 Deferred | Auth stays in host app. Use standard Phoenix `pipe_through` for routes, `socket.assigns.current_user` for components. See Design Principle #7. |
-| SSE token auth (`?token=...`) | 🚫 Deferred | Document as a recipe — host app validates tokens in a Plug before SSEPlug. |
-| Role-based access for module routes | 🚫 Deferred | Document as a recipe — standard Phoenix router pipelines and plug checks. |
+| Module `auth/0` callback | 🟡 In Progress | Module declares `auth/0` returning provider metadata. `Blenny.AuthRegistry` stores it at boot. See Auth System section. |
+| SSE token auth (`?token=...`) | 🚫 Deferred | Document as a recipe — auth module validates tokens in its `fetch_session` plug. |
+| Role-based access for module routes | 🟡 In Progress | `Blenny.Plug.RequireRole` reads `blenny_auth.role` from `conn.assigns`. Auth module sets this during fetch. |
 | LiveView auth via Phoenix plug pipeline | ✅ Done | Host app handles in `live_session`; Blenny doesn't interfere. |
 | Auth integration recipes (Pow, AshAuthentication, etc.) | 📝 Needed | Document common patterns in "Getting Started" guide and HexDocs. |
 | Anonymous vs authenticated connection distinction | ✅ Done | `user_id` field on Connection struct. |
@@ -273,7 +277,7 @@ Exit criteria:
 | Module discovery | ✅ Done | — |
 | Module lifecycle | ✅ Done | — |
 | Route registration (Blenny.Router macro) | 🟡 Partial | Macro design decided, needs implementation |
-| `auth/0` callback | 🚫 Deferred | Auth stays in host app; provide documented recipes |
+| `auth/0` callback | 🟡 In Progress | Module returns provider metadata; registered in Blenny.AuthRegistry at boot |
 | Subscription wiring | ❌ Missing | Behaviour callback defined but unused |
 | Config validation (`nimble_options`) | ❌ Missing | Dep listed, never used |
 | Telemetry (any subsystem) | ❌ Missing | — |
@@ -287,7 +291,7 @@ Exit criteria:
 | Hex publish | ❌ Missing | — |
 | Docs on HexDocs | ❌ Missing | — |
 | Generators (mix tasks) | ❌ Missing | — |
-| SSE token auth | 🚫 Deferred | Document as recipe (host app handles token validation) |
+| SSE token auth | 🚫 Deferred | Auth module's `fetch_session` plug handles token validation |
 | Auth integration patterns | 📝 Recipes needed | Document Pow, AshAuthentication, pipe_through patterns |
 
 ## Dangling / Partial Items
@@ -305,16 +309,19 @@ are partially implemented or not yet wired into the framework:
 
 ## Resolved Decisions
 
-These were previously listed as open questions. Decisions made on 2026-06-03.
+These were previously listed as open questions.
 
-1. **Auth integration** — **Keep auth in host application.** No `auth/0`
-   callback on `Blenny.Module`. Injecting framework-level auth generation
-   violates Design Principle #8 (No framework lock-in). Elixir developers are
-   protective of their plug pipelines — forcing a Blenny-specific auth layout
-   map creates friction. Instead, use standard Phoenix Router `pipe_through`
-   for route security and `socket.assigns.current_user` for fine-grained
-   component access. Document recipes for common patterns (Pow,
-   AshAuthentication, etc.).
+1. **Auth integration** — **Auth via modules with framework plumbing.**
+   Blenny provides the `Blenny.AuthRegistry`, pipeline plugs
+   (`FetchSession`, `RequireUser`, `RequireRole`), and the
+   `Blenny.Router` macro. Auth modules implement `Blenny.Module` with
+   `capabilities: [:auth]` and an `auth/0` callback returning provider
+   metadata. The module owns its storage strategy, UI, and cryptography.
+   It registers its verification function with `AuthRegistry` during
+   `initialize/1`. The framework plugs delegate to the registered
+   provider at runtime. This preserves full encapsulation while
+   eliminating the boilerplate of manual route wiring and plug
+   configuration.
 
 2. **Connection recovery** — **Explicitly deferred.** Datastar manages its own
    client-side reconnection loop. Blenny modules are either stateless
@@ -388,10 +395,14 @@ These were previously listed as open questions. Decisions made on 2026-06-03.
 
 ## Testing Summary
 
-### Current: 65 unit tests + 4 integration tests = 69 total
+### Current: 122 tests (all passing)
 
 | Area | Tests | Priority for Next |
 |------|-------|-------------------|
+| Auth struct | 4 | 🟢 Low |
+| AuthRegistry | 5 | 🟢 Low |
+| Auth plugs (FetchSession, RequireUser, RequireRole) | 12 | 🟢 Low |
+| Router macro | 9 | 🟢 Low |
 | Connection struct | 3 | 🟢 Low |
 | Registry | 13 | 🟢 Low |
 | Intent | 12 | 🟢 Low |
@@ -403,12 +414,11 @@ These were previously listed as open questions. Decisions made on 2026-06-03.
 | Loader | 4 | 🟢 Low |
 | Lifecycle | 4 | 🟢 Low |
 | Bootstrap | 3 | 🟢 Low |
-| SSEPlug | **0** | 🔴 High |
-| SSE dashboard integration | 0 | 🟡 Medium |
+| SSEPlug | 27 | 🟢 Low |
 | LiveView integration | 4 | 🟢 Low |
+| SSE dashboard integration | 4 | 🟡 Medium |
 | Load/stress | **0** | 🔴 High |
 | Telemetry assertions | **0** | 🟡 Medium |
-| Auth/security | **0** | 🟡 Medium |
 
 ---
 

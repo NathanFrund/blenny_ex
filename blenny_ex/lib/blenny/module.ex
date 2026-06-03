@@ -76,7 +76,7 @@ defmodule Blenny.Module do
           required(:method) => :get | :post | :put | :delete | :patch,
           required(:path) => String.t(),
           required(:handler) => atom(),
-          optional(:auth) => boolean() | String.t()
+          optional(:auth) => boolean()
         }
 
   @type subscription :: %{
@@ -94,8 +94,19 @@ defmodule Blenny.Module do
   @doc """
   List of HTTP routes this module provides.
 
-  Each route is a map with `:method`, `:path`, and `:handler`.
-  Optionally `:auth` can be `true` (requires any auth) or a role string.
+  Each route can be a map or tuple:
+
+      # Map format
+      %{method: :get, path: "/signin", handler: :render_sign_in}
+      %{method: :post, path: "/avatar", handler: :handle_avatar, auth: true}
+
+      # Tuple format
+      {:get, "/signin", :render_sign_in}
+      {:post, "/avatar", :handle_avatar, [auth: true]}
+
+  The handler must be an atom (controller action name). Routes tagged with
+  `auth: true` are automatically wrapped with `Blenny.Plug.RequireUser`
+  when mounted via `Blenny.Router.blenny_modules/1`.
   """
   @callback routes() :: [route()]
 
@@ -128,7 +139,17 @@ defmodule Blenny.Module do
   """
   @callback child_spec(keyword()) :: :skip | Supervisor.child_spec()
 
-  @optional_callbacks initialize: 1, child_spec: 1
+  @doc """
+  Returns auth provider metadata.
+
+  Only meaningful for modules with `capabilities: ["auth"]`. Returns a keyword
+  list with:
+
+    - `:login_route` — path to redirect unauthenticated users (default: `"/auth/signin"`)
+  """
+  @callback auth() :: keyword()
+
+  @optional_callbacks initialize: 1, child_spec: 1, auth: 0
 
   defmacro __using__(_opts) do
     quote do

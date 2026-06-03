@@ -24,6 +24,12 @@ as an independent dependency; the test app ships in the same monorepo.
    host apps add it as a dependency
 6. **Publisher-first API** — modules call `Blenny.Publisher` to reach
    clients; they never write to transport sockets directly
+7. **Auth via modules** — Auth is delivered by modules declaring
+   `capabilities: [:auth]`. The module owns storage, UI, and crypto;
+   Blenny provides the registry, pipeline plugs, and router macro.
+8. **No framework lock-in** — bring your own database and session
+   management; Blenny handles transport routing, lifecycle, and
+   auth plumbing
 
 ## What's Built
 
