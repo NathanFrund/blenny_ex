@@ -91,7 +91,7 @@ defmodule BlennyTestApp.Blenny.DashboardModule do
   defp gather_metrics(%{run_before: nil}, _current), do: zero_metrics()
 
   defp gather_metrics(%{run_before: rb, wc_before: wb}, {rn, wn}) do
-    now = DateTime.utc_now()
+    now = BlennyTestApp.Time.now()
 
     %{
       "cpu" => cpu_pct({rb, wb}, {rn, wn}),
@@ -102,7 +102,7 @@ defmodule BlennyTestApp.Blenny.DashboardModule do
   end
 
   defp zero_metrics do
-    now = DateTime.utc_now()
+    now = BlennyTestApp.Time.now()
 
     %{
       "cpu" => 0.0,

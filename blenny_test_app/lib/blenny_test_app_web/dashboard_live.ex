@@ -83,11 +83,13 @@ defmodule BlennyTestAppWeb.DashboardLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    now = BlennyTestApp.Time.now()
+
     socket =
       socket
       |> assign(:cpu, 0)
       |> assign(:mem, 0)
-      |> assign(:time, DateTime.utc_now() |> Calendar.strftime("%H:%M:%S"))
+      |> assign(:time, now |> Calendar.strftime("%H:%M:%S"))
       |> stream(:events, [])
 
     {:ok, socket}
@@ -141,13 +143,13 @@ defmodule BlennyTestAppWeb.DashboardLive do
   end
 
   defp format_time(%{"timestamp" => ts}) when is_integer(ts) do
-    DateTime.from_unix!(div(ts, 1000)) |> Calendar.strftime("%H:%M:%S")
+    BlennyTestApp.Time.from_unix_ms(ts)
   end
 
-  defp format_time(_), do: DateTime.utc_now() |> Calendar.strftime("%H:%M:%S")
+  defp format_time(_), do: BlennyTestApp.Time.format_timestamp()
 
   defp format_timestamp do
-    DateTime.utc_now() |> Calendar.strftime("%H:%M:%S")
+    BlennyTestApp.Time.format_timestamp()
   end
 
   defp unique_id do
