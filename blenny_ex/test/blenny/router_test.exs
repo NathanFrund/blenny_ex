@@ -21,6 +21,8 @@ defmodule Blenny.RouterTest do
 
     @impl true
     def subscriptions, do: []
+
+    def init(_opts), do: {:ok, nil}
   end
 
   defmodule TestRouter do
