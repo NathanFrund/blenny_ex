@@ -37,18 +37,25 @@ defmodule Blenny.Transport.SSEPlug do
       )
 
     Process.flag(:trap_exit, true)
-    :ok = Blenny.Hub.register_connection(conn_struct)
 
-    pubsub = Blenny.pub_sub()
+    case Blenny.Hub.register_connection(conn_struct) do
+      {:ok, _conn} ->
+        pubsub = Blenny.pub_sub()
 
-    for intent <- Blenny.Intent.routing() do
-      Phoenix.PubSub.subscribe(pubsub, Blenny.Intent.to_topic(intent), link: true)
+        for intent <- Blenny.Intent.routing() do
+          Phoenix.PubSub.subscribe(pubsub, Blenny.Intent.to_topic(intent), link: true)
+        end
+
+        user_topic = Blenny.Intent.user_topic(user_id || conn_id)
+        Phoenix.PubSub.subscribe(pubsub, user_topic, link: true)
+
+        sse_loop(conn, conn_id, intents)
+
+      {:error, _reason} ->
+        conn
+        |> put_resp_header("retry-after", "10")
+        |> send_resp(429, "Too Many Requests")
     end
-
-    user_topic = Blenny.Intent.user_topic(user_id || conn_id)
-    Phoenix.PubSub.subscribe(pubsub, user_topic, link: true)
-
-    sse_loop(conn, conn_id, intents)
   end
 
   defp sse_loop(conn, conn_id, intents) do

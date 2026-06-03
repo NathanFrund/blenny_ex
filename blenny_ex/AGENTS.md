@@ -140,6 +140,8 @@ global name collisions. Two files per store: `users.dets` (primary) +
 | **DateTime: no tzdata** | `:calendar.local_time()` + `:erlang.time_offset()` for local time. `DateTime.add/3` on OTP 29 takes 197ms — use `:calendar.gregorian_seconds_to_datetime/1` (11μs). |
 | **ETS `async: false` tests** | Named ETS tables are process-global. Parallel test suites share them. Use `async: false` for ETS-backed stores or guard with `:ets.info` before delete. |
 | **Publisher is stateless** | No GenServer, no state. Thin wrapper over `Phoenix.PubSub.broadcast`. Zero-ceremony from any code. |
+| **Connection limits enforced at Hub** | `max_connections` (system-wide) and `max_per_user` (per dedup-key) checked in `register_connection` before any existing dedup logic. Returns `{:error, reason}` on limit hit — callers propagate 429 (SSEPlug) or halt mount (LiveViewBridge). |
+| **max_per_user counts by dedup key** | Uses the same dedup-key logic as connection dedup: `user_id` for authenticated users, `conn.id` for anonymous. This protects anonymous routes (sign-in, registration) from bot exhaustion. |
 
 ---
 
@@ -233,7 +235,7 @@ global name collisions. Two files per store: `users.dets` (primary) +
 
 - Framework fully implemented: modules, PubSub-direct routing, SSE, LiveView,
   publisher, config, auth plugs, router macro, storage layer.
-- 165 tests (43 new in the storage layer) — all passing, zero warnings.
+- 168 tests — all passing, zero warnings.
 - `mix format` clean. `mix compile --warnings-as-errors` clean.
 - Known gaps vs blenny-ts (see Gaps section below).
 
@@ -242,11 +244,11 @@ Testing summary:
 | Area | Tests | Status |
 |---|---|---|
 | Auth (struct, registry, plugs, router) | 30 | ✅ |
-| Connection (struct, registry) | 16 | ✅ |
+| Connection (struct, registry) | 18 | ✅ |
 | Intent | 12 | ✅ |
 | Config | 5 | ✅ |
 | Error | 2 | ✅ |
-| Hub | 7 | ✅ |
+| Hub | 9 | ✅ |
 | Publisher | 9 | ✅ |
 | Module (behaviour, loader, lifecycle) | 11 | ✅ |
 | Bootstrap | 3 | ✅ |
@@ -321,9 +323,13 @@ blenny_test_app/
   conversion.
 - **LiveView on_mount context:** `Phoenix.PubSub.subscribe` from `on_mount`
   subscribes the LiveView process. Messages arrive as `handle_info` calls.
-- **Blenny.Hub.register_connection/1:** Returns `:ok`, not `{:ok, conn}`.
+- **Blenny.Hub.register_connection/1:** Returns `{:ok, conn}` on success, `{:error, :too_many_connections}` or `{:error, :too_many_per_user}` on limit reached. Configure limits via `config :blenny_ex, hub: [max_connections: 10_000, max_per_user: 100]` or pass opts directly to `Blenny.Hub.start_link/1` (opts override config).
 - **Named ETS tables in tests:** Use `async: false` when tests share named
   ETS tables, or guard deletes with `:ets.info`.
+- **Connection.Registry.start_link/0 is idempotent:** Safe to call from
+  multiple Hub instances — returns the existing table tid if the ETS tables
+  already exist. Enables testing Hub limit configurations by starting
+  additional Hub instances with different opts.
 - **DETS crash safety:** Call `:dets.sync/1` after every write operation.
   DETS buffers writes in memory by default — sync flushes to disk.
 - **`blenny_modules/2` test modules:** The handler module is used as a Phoenix

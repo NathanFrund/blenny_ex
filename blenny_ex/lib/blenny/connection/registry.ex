@@ -12,15 +12,30 @@ defmodule Blenny.Connection.Registry do
 
   @doc """
   Creates the ETS tables. Called during boot.
+
+  Idempotent — safe to call multiple times; returns existing tables if they
+  already exist. This allows multiple Hub instances in test scenarios.
   """
   @spec start_link() :: {:ok, :ets.tid()}
   def start_link do
-    tid = :ets.new(@table_name, [:ordered_set, :public, :named_table, write_concurrency: true])
+    tid =
+      create_or_get_table(@table_name, [
+        :ordered_set,
+        :public,
+        :named_table,
+        write_concurrency: true
+      ])
 
-    :ets.new(@dedup_index, [:set, :public, :named_table, write_concurrency: true])
-    :ets.new(@user_index, [:bag, :public, :named_table, write_concurrency: true])
-
+    create_or_get_table(@dedup_index, [:set, :public, :named_table, write_concurrency: true])
+    create_or_get_table(@user_index, [:bag, :public, :named_table, write_concurrency: true])
     {:ok, tid}
+  end
+
+  defp create_or_get_table(name, opts) do
+    case :ets.info(name) do
+      :undefined -> :ets.new(name, opts)
+      _ -> :ets.whereis(name)
+    end
   end
 
   @doc """
@@ -96,6 +111,18 @@ defmodule Blenny.Connection.Registry do
     |> :ets.lookup(user_id)
     |> Enum.map(fn {^user_id, conn_id} -> lookup(conn_id) end)
     |> Enum.reject(&is_nil/1)
+  end
+
+  @doc """
+  Returns the number of connections for a given dedup key.
+
+  The dedup key is `user_id` if present, or the connection's id as fallback.
+  """
+  @spec count_by_dedup_key(String.t()) :: non_neg_integer()
+  def count_by_dedup_key(dedup_key) when is_binary(dedup_key) do
+    @dedup_index
+    |> :ets.match({{dedup_key, :"$1"}, :"$2"})
+    |> length()
   end
 
   @doc """

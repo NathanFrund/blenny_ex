@@ -57,17 +57,21 @@ defmodule Blenny.Transport.LiveViewBridge do
         intents: intents
       )
 
-    :ok = Blenny.Hub.register_connection(conn)
+    case Blenny.Hub.register_connection(conn) do
+      {:ok, _conn} ->
+        pubsub = Blenny.pub_sub()
 
-    pubsub = Blenny.pub_sub()
+        for intent <- Blenny.Intent.routing() do
+          Phoenix.PubSub.subscribe(pubsub, Blenny.Intent.to_topic(intent), link: true)
+        end
 
-    for intent <- Blenny.Intent.routing() do
-      Phoenix.PubSub.subscribe(pubsub, Blenny.Intent.to_topic(intent), link: true)
+        user_topic = Blenny.Intent.user_topic(user_id || conn_id)
+        Phoenix.PubSub.subscribe(pubsub, user_topic, link: true)
+
+        {:cont, Phoenix.Component.assign(socket, :blenny_conn_id, conn_id)}
+
+      {:error, _reason} ->
+        {:halt, socket}
     end
-
-    user_topic = Blenny.Intent.user_topic(user_id || conn_id)
-    Phoenix.PubSub.subscribe(pubsub, user_topic, link: true)
-
-    {:cont, Phoenix.Component.assign(socket, :blenny_conn_id, conn_id)}
   end
 end

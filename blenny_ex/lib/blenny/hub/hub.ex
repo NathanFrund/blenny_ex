@@ -27,6 +27,11 @@ defmodule Blenny.Hub do
   @doc """
   Registers a connection.
 
+  Enforces connection limits before registering:
+    - `max_connections` — system-wide cap, returns `{:error, :too_many_connections}` when exceeded
+    - `max_per_user` — per-dedup-key cap (user_id for authenticated, conn.id for anonymous),
+      returns `{:error, :too_many_per_user}` when exceeded
+
   Enforces `{user_id, conn_type}` dedup: if a connection already exists for
   the same user and type, the old connection receives a
   `{:blenny_replaced, new_pid}` message and the new one takes its place.
@@ -75,31 +80,49 @@ defmodule Blenny.Hub do
   # ── Server callbacks ───────────────────────────────────────────
 
   @impl true
-  def init(_opts) do
+  def init(opts) do
     Blenny.Connection.Registry.start_link()
 
-    {:ok, %{monitors_by_ref: %{}, monitors_by_conn: %{}}}
+    {:ok,
+     %{
+       monitors_by_ref: %{},
+       monitors_by_conn: %{},
+       max_connections: opts[:max_connections] || Blenny.Config.get([:hub, :max_connections]),
+       max_per_user: opts[:max_per_user] || Blenny.Config.get([:hub, :max_per_user])
+     }}
   end
 
   @impl true
   def handle_call({:register_connection, conn}, _from, state) do
-    dedup_key = dedup_key(conn)
-    existing = Blenny.Connection.Registry.lookup_by_dedup_key(dedup_key, conn.conn_type)
+    conn_count = Blenny.Connection.Registry.count()
 
-    state =
-      if existing do
-        send(existing.transport_pid, {:blenny_replaced, conn.transport_pid})
-        demonitor_if_pid(state, existing.transport_pid)
-        Blenny.Connection.Registry.unregister(existing.id)
-        state
+    if conn_count >= state.max_connections do
+      {:reply, {:error, :too_many_connections}, state}
+    else
+      dedup_key = dedup_key(conn)
+      per_user_count = Blenny.Connection.Registry.count_by_dedup_key(dedup_key)
+
+      if per_user_count >= state.max_per_user do
+        {:reply, {:error, :too_many_per_user}, state}
       else
-        state
+        existing = Blenny.Connection.Registry.lookup_by_dedup_key(dedup_key, conn.conn_type)
+
+        state =
+          if existing do
+            send(existing.transport_pid, {:blenny_replaced, conn.transport_pid})
+            demonitor_if_pid(state, existing.transport_pid)
+            Blenny.Connection.Registry.unregister(existing.id)
+            state
+          else
+            state
+          end
+
+        {:ok, _} = Blenny.Connection.Registry.register(conn)
+        state = monitor_if_pid(state, conn)
+
+        {:reply, {:ok, conn}, state}
       end
-
-    {:ok, _} = Blenny.Connection.Registry.register(conn)
-    state = monitor_if_pid(state, conn)
-
-    {:reply, :ok, state}
+    end
   end
 
   @impl true
