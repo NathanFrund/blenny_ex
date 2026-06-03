@@ -20,9 +20,16 @@ defmodule Blenny.Module.Loader do
   """
   @spec modules() :: [module()]
   def modules do
-    configured = Application.get_env(:blenny_ex, :modules, [])
-    discovered = discover_modules()
-    Enum.uniq(configured ++ discovered)
+    configured = Application.get_env(:blenny_ex, :modules, nil)
+
+    mods =
+      if configured do
+        configured
+      else
+        discover_modules()
+      end
+
+    Enum.uniq(mods)
   end
 
   @doc """

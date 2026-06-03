@@ -56,6 +56,19 @@ defmodule BlennyTestAppWeb.DashboardLive do
             </button>
           </div>
         </div>
+
+        <div class="rounded-lg border p-4 bg-white shadow-sm">
+          <h2 class="text-lg font-semibold mb-3">Event Log</h2>
+          <div id="event-log" class="space-y-1 max-h-64 overflow-y-auto text-sm font-mono">
+            <div :for={event <- @events} class="flex gap-2">
+              <span class="text-gray-400 shrink-0">{event.time}</span>
+              <span>{event.message}</span>
+            </div>
+            <div :if={@events == []} class="text-gray-400 italic">
+              No events yet
+            </div>
+          </div>
+        </div>
       </div>
     </Layouts.app>
     """
@@ -70,23 +83,36 @@ defmodule BlennyTestAppWeb.DashboardLive do
       |> assign(:cpu, 0)
       |> assign(:mem, 0)
       |> assign(:time, now |> Calendar.strftime("%H:%M:%S"))
+      |> assign(:events, [])
 
     {:ok, socket}
   end
 
   @impl true
-  def handle_info({:blenny_msg, _intent, payload}, socket) do
-    if signals = payload[:signals] do
-      socket =
-        socket
-        |> assign(:cpu, signals["cpu"] || socket.assigns.cpu)
-        |> assign(:mem, signals["mem"] || socket.assigns.mem)
-        |> assign(:time, signals["time"] || format_time(signals))
+  def handle_info({:blenny_msg, intent, payload}, socket) do
+    socket =
+      if signals = payload[:signals] do
+        time = signals["time"] || format_time(signals)
+        cpu = signals["cpu"]
+        mem = signals["mem"]
 
-      {:noreply, socket}
-    else
-      {:noreply, socket}
-    end
+        event = %{
+          time: time,
+          message: format_event_message(intent, cpu, mem)
+        }
+
+        events = [event | socket.assigns.events] |> Enum.take(20)
+
+        socket
+        |> assign(:cpu, cpu || socket.assigns.cpu)
+        |> assign(:mem, mem || socket.assigns.mem)
+        |> assign(:time, time)
+        |> assign(:events, events)
+      else
+        socket
+      end
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -121,5 +147,17 @@ defmodule BlennyTestAppWeb.DashboardLive do
 
   defp format_timestamp do
     BlennyTestApp.Time.format_timestamp()
+  end
+
+  defp format_event_message(_intent, cpu, _mem) when not is_nil(cpu) do
+    "CPU #{cpu}%"
+  end
+
+  defp format_event_message(_intent, nil, mem) when not is_nil(mem) do
+    "Memory #{mem} MB"
+  end
+
+  defp format_event_message(_intent, nil, nil) do
+    "Signal update"
   end
 end

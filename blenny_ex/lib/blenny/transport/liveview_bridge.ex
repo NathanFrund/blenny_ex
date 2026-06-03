@@ -29,7 +29,7 @@ defmodule Blenny.Transport.LiveViewBridge do
 
   defmacro __using__(opts) do
     quote do
-      on_mount {Blenny.Transport.LiveViewBridge, unquote(opts)}
+      on_mount({Blenny.Transport.LiveViewBridge, unquote(opts)})
     end
   end
 
@@ -60,6 +60,7 @@ defmodule Blenny.Transport.LiveViewBridge do
     :ok = Blenny.Hub.register_connection(conn)
 
     pubsub = Blenny.pub_sub()
+
     for intent <- Blenny.Intent.routing() do
       Phoenix.PubSub.subscribe(pubsub, Blenny.Intent.to_topic(intent), link: true)
     end

@@ -1,0 +1,416 @@
+# blenny_ex Roadmap
+
+Multi-transport hypermedia engine for Phoenix — SSE (Datastar) and LiveView.
+
+## Project Identity
+
+An Elixir/Phoenix library for building multi-transport hypermedia applications.
+Blenny lets you write unified HTML components that can be delivered over
+Server-Sent Events (Datastar) **or** Phoenix LiveView WebSockets, routing
+transport based on the client's runtime environment. The library is published
+to Hex as an independent dependency; the test app ships in the same monorepo.
+
+### Design Principles
+
+1. **Self-assembling modules** — modules implement `Blenny.Module`, declare
+   routes, capabilities, subscriptions, lifecycle hooks, and auto-register at
+   compile time
+2. **Real-time by default** — SSE and LiveView are first-class transport
+   primitives, not afterthoughts
+3. **Datastar wire format** — server-side SSE uses `dstar` Hex package for
+   `patch_elements`, `patch_signals`, `execute_script`
+4. **Connection intents** — per-connection intent filtering (`:ui`,
+   `:command`, `:notification`, `:all`) prevents redundant deliveries when a
+   user has multiple connections open
+5. **Hex-publishable library** — `blenny_ex` is a standalone Hex package;
+   host apps add it as a dependency
+6. **Publisher-first API** — modules call `Blenny.Publisher` to reach
+   clients; they never write to transport sockets directly
+7. **Auth in the host app** — Blenny does not define auth callbacks or
+   middleware. Route security uses standard Phoenix `pipe_through`;
+   component access checks `socket.assigns.current_user`. Documented
+   recipes cover common patterns.
+8. **No framework lock-in** — bring your own auth, database, and
+   session management; Blenny handles transport routing and lifecycle
+
+## Definition of Done
+
+`blenny_ex` is **done** when each of these is true:
+
+1. A developer can `{:blenny_ex, "~> 1.0"}` and have SSE + LiveView delivery
+   working with a few lines of config
+2. All `Blenny.Module` callbacks are wired into the framework (routes
+   auto-mounted via `Blenny.Router` macro, subscriptions auto-wired)
+3. All production-hardening features are implemented (telemetry, rate
+   limiting, connection draining, graceful shutdown, config validation)
+4. WebSocket transport explicitly deferred with documented rationale (see
+   Transport Layer section); SSE + LiveView cover all real-time use cases
+5. Auth integration recipes documented for common patterns (Pow,
+   AshAuthentication, `pipe_through`); no auth callbacks in Blenny.Module
+6. Library is published on Hex with docs on HexDocs
+7. At least one external production user exists outside the monorepo
+8. API surface is stable (no breaking changes for 1.x)
+
+## The Full Blenny Spec (Elixir)
+
+### A. Module System
+
+The module system is the core abstraction. Every feature — routes, auth,
+subscriptions, lifecycle, capabilities — flows through `Blenny.Module`.
+
+| Feature | Status | What's Needed |
+|---------|--------|---------------|
+| Behaviour with all callbacks (`name/0`, `routes/0`, `capabilities/0`, `subscriptions/0`, `initialize/1`, `child_spec/1`) | ✅ Done | — |
+| `auth/0` callback | 🚫 Deferred | Auth stays in host app. See Design Principle #7 and Auth System section. |
+| Compile-time discovery via `@after_compile` | ✅ Done | — |
+| Declarative modules (`:skip` child_spec) | ✅ Done | — |
+| Stateful modules (DynamicSupervisor) | ✅ Done | — |
+| Capability conflict detection at boot | ✅ Done | — |
+| Route auto-registration (mount `routes/0` into router) | 🟡 Partial | Decision: `Blenny.Router` macro (`import Blenny.Router; blenny_modules("/m")`). Need implementation. |
+| Subscription auto-wiring (`subscriptions/0` → PubSub) | ❌ Missing | `subscriptions/0` defined in behaviour but never called. Need lifecycle step that subscribes each module's handlers |
+| Module-level middleware (before/after hooks) | ❌ Missing | No callback for request lifecycle hooks |
+| Boot sequence orchestrator | ✅ Done | — |
+
+### B. Transport Layer
+
+| Feature | Status | What's Needed |
+|---------|--------|---------------|
+| SSE via `Blenny.Transport.SSEPlug` (Datastar wire format) | ✅ Done | Unit tests missing |
+| LiveView via `Blenny.Transport.LiveViewBridge` (`on_mount` hook) | ✅ Done | — |
+| LiveView `handle_info({:blenny_msg, intent, payload})` | ✅ Done | — |
+| Intent filtering per-transport | ✅ Done | — |
+| `{:blenny_replaced, pid}` handling | ✅ Done | — |
+| WebSocket transport (optional sidecar for non-Phoenix clients) | 🚫 Deferred | See rationale below table |
+| Connection recovery (session token cookie, restore state on reconnect) | 🚫 Deferred | Datastar manages client-side reconnection. Frontend sends state via signals on reconnect. See Resolved Decisions. |
+| SSE reconnection backoff strategy | ❌ Missing | Document expected client behavior (default: Datastar's built-in backoff may suffice) |
+| Transport-level graceful disconnect (close frame on SIGTERM) | ❌ Missing | SSEPlug needs `trap_exit` + close frame |
+
+**WebSocket Transport — Deferral Rationale:**
+
+Phoenix LiveView already provides an ultra-optimized, clustered WebSocket
+channel implementation via `LiveViewBridge`. Adding a parallel raw WebSocket
+sidecar within `blenny_ex` duplicates network overhead for zero functional
+gain. Non-Phoenix clients (Rust CLI, Go microservice, etc.) that need to
+communicate with Blenny can use Phoenix's native `Phoenix.Channel` API over
+WebSocket — Blenny does not need its own WebSocket layer. Blenny remains
+focused on being the hypermedia delivery layer between modules and clients,
+not re-implementing what Phoenix already provides.
+
+### C. Publisher API
+
+| Feature | Status | What's Needed |
+|---------|--------|---------------|
+| `broadcast_html/1` | ✅ Done | — |
+| `broadcast_data/1` | ✅ Done | — |
+| `execute_script/1` | ✅ Done | — |
+| `direct_html/2` | ✅ Done | — |
+| `direct_data/2` | ✅ Done | — |
+| Typed event system (beyond raw maps) | ❌ Missing | Define `Blenny.Event` struct with `:type`, `:payload`, `:metadata` for structured pub-sub |
+| Publisher telemetry (emit on each publish) | ❌ Missing | Add `:telemetry` span per publish call |
+
+### D. Connection Management
+
+| Feature | Status | What's Needed |
+|---------|--------|---------------|
+| ETS registry (primary, dedup, user index) | ✅ Done | — |
+| `{user_id, conn_type}` dedup (max 1 SSE + 1 LV per user) | ✅ Done | — |
+| Per-user connection list | ✅ Done | — |
+| Transport process monitoring (DOWN cleanup) | ✅ Done | — |
+| `max_connections` enforcement | 🟡 Partial | Config default exists (10_000), Hub never checks it |
+| `max_per_user` enforcement | 🟡 Partial | Config default exists (100), Hub never checks it |
+| `connected_users/0` listing | ❌ Missing | Could be derived from user index, no public API |
+| Stale connection sweeper (periodic cleanup of dead but undelivered-DOWN entries) | ❌ Missing | Timer-based ETS sweep for entries with no matching process |
+| Connection draining on deploy | ❌ Missing | SSEPlug needs graceful drain protocol |
+| Rate limiting per connection | ❌ Missing | Per-connection message throttle |
+| Connection metadata (connect time, last activity, bytes sent) | ❌ Missing | Extend ETS entry with metadata map |
+
+### E. Auth System
+
+| Feature | Status | What's Needed |
+|---------|--------|---------------|
+| Module `auth/0` callback | 🚫 Deferred | Auth stays in host app. Use standard Phoenix `pipe_through` for routes, `socket.assigns.current_user` for components. See Design Principle #7. |
+| SSE token auth (`?token=...`) | 🚫 Deferred | Document as a recipe — host app validates tokens in a Plug before SSEPlug. |
+| Role-based access for module routes | 🚫 Deferred | Document as a recipe — standard Phoenix router pipelines and plug checks. |
+| LiveView auth via Phoenix plug pipeline | ✅ Done | Host app handles in `live_session`; Blenny doesn't interfere. |
+| Auth integration recipes (Pow, AshAuthentication, etc.) | 📝 Needed | Document common patterns in "Getting Started" guide and HexDocs. |
+| Anonymous vs authenticated connection distinction | ✅ Done | `user_id` field on Connection struct. |
+
+### F. Production Infrastructure
+
+| Feature | Status | What's Needed |
+|---------|--------|---------------|
+| Telemetry events from Hub (register, unregister, count) | ❌ Missing | Define event names, emit with metadata |
+| Telemetry events from Publisher (publish per intent) | ❌ Missing | Define event names, emit with metadata |
+| Telemetry events from SSEPlug (connect, disconnect, bytes) | ❌ Missing | Define event names, emit with metadata |
+| Graceful shutdown (SIGTERM → drain connections → stop modules) | ❌ Missing | Document order; add shutdown hooks |
+| Config validation with `nimble_options` | ❌ Missing | Validate `:blenny_ex` config at boot (requires `pub_sub`, valid values) |
+| Cluster support (distributed PubSub via PG) | 🟡 Partial | Phoenix PubSub handles this; Blenny just uses configured PubSub |
+| Logger metadata (connection_id, user_id on each log line) | ❌ Missing | Add Logger.metadata in transport processes |
+
+### G. Developer Experience
+
+| Feature | Status | What's Needed |
+|---------|--------|---------------|
+| `README.md` — installation, architecture, quickstart | 🟡 Partial | Needs full "Getting Started" guide |
+| `ARCHITECTURE.md` — design decisions, phases | ✅ Done | — |
+| `ROADMAP.md` — this file | ✅ Done | — |
+| `CHANGELOG.md` | ❌ Missing | Start with current state, update per release |
+| `mix blenny.gen.module MyModule` — scaffold a module | ❌ Missing | Generator template |
+| `mix blenny.install` — add dep + config to host app | ❌ Missing | Installer |
+| `mix blenny.init` — full application scaffold | ❌ Missing | Mix task |
+| HexDocs publish (module docs, guides) | ❌ Missing | Enable in mix.exs, push on release |
+| `@moduledoc` on all public modules (some are sparse) | 🟡 Partial | Fill in gaps |
+| `@doc` on all public functions | 🟡 Partial | Fill in gaps |
+| Changelog | ❌ Missing | Keep per-release |
+
+## Milestones
+
+### M0: Foundation (Phases 1-4)
+
+The core architecture: connection layer, intents, transports, module system.
+
+**Status: ✅ Complete**
+
+Exit criteria:
+- [x] `Blenny.Connection` struct created and tested
+- [x] ETS registry with primary + dedup + user indexes
+- [x] Hub GenServer for lifecycle coordination (register, monitor, dedup, DOWN cleanup)
+- [x] Intent types, topic mapping, parsing, `accepts?/2`
+- [x] Publisher with 5 broadcast/direct functions
+- [x] SSE endpoint via `Blenny.Transport.SSEPlug` with Datastar wire format
+- [x] LiveView `on_mount` hook via `Blenny.Transport.LiveViewBridge`
+- [x] Module behaviour with all callbacks
+- [x] Compile-time module discovery + capability conflict detection
+- [x] Module lifecycle (initialize, start_supervised)
+- [x] Boot sequence orchestrator
+- [x] Monorepo with test app
+- [x] 65 unit tests, 4 integration tests passing
+- [x] All files formatted, precommit passing
+
+### M1: Integration-Ready (v0.2.0)
+
+Production-light: enough for a brave early adopter to integrate into a real
+app without fighting the framework.
+
+**Status: 🔜 Target**
+
+Exit criteria:
+- [ ] Telemetry events emitted from Hub (register, unregister, count)
+- [ ] `max_connections` and `max_per_user` enforced in Hub
+- [ ] `nimble_options` validates `:blenny_ex` config at boot
+- [ ] SSEPlug unit tests written (subscribe, loop, message dispatch, disconnect)
+- [ ] Integration test for SSE dashboard (use Req/reliable HTTP client to connect, verify event stream)
+- [ ] `Blenny.Router` macro implemented (`import Blenny.Router; blenny_modules("/m")`)
+- [ ] "Getting Started" guide in `README.md` covering: add dep, config PubSub, add ModuleRegistry/Supervisor to tree, define first module, boot
+- [ ] CI pipeline (GitHub Actions: test, format check, unused deps check)
+- [ ] `CHANGELOG.md` started
+- [ ] Auth integration recipes documented (Pow, AshAuthentication, pipe_through patterns)
+
+### M2: Production-Ready (v0.5.0-beta)
+
+Hardened for production: telemetry, rate limits, graceful shutdown,
+comprehensive testing.
+
+**Status: 🔮 Future**
+
+Exit criteria:
+- [ ] All M1 items complete
+- [ ] Telemetry from Publisher (emit per publish) and SSEPlug (connect/disconnect)
+- [ ] Graceful shutdown tested (SIGTERM → SSE close frame → Hub cleanup → module stop)
+- [ ] Load test: 100 concurrent SSE connections with metrics
+- [ ] Rate limiting per connection (configurable messages/sec)
+- [ ] SSE reconnection backoff documented (or Datastar's built-in backoff deemed sufficient)
+- [ ] Stale connection sweeper (periodic ETS cleanup)
+- [ ] Auth integration recipes complete, in HexDocs
+- [ ] Connection draining tested (deploy scenario)
+- [ ] Dialyzer passing with no unknown warnings
+- [ ] Credo passing with ≤ 10 warnings
+- [ ] Test coverage ≥ 80% (ExCoveralls)
+- [ ] `subscriptions/0` callback wired (modules subscribed at boot)
+- [ ] `connected_users/0` API
+- [ ] GitHub Actions passing on every push
+- [ ] Published to Hex as `0.5.0-beta`
+
+### M3: Stable (v1.0.0)
+
+Feature-complete, stable API, external validation.
+
+**Status: 🔮 Future**
+
+Exit criteria:
+- [ ] All M2 items complete
+- [x] WebSocket transport explicitly deferred with documented rationale
+- [x] Session-level state serialization across reconnects explicitly deferred (rationale in Resolved Decisions)
+- [ ] API surface stable (no breaking changes planned for 1.x)
+- [ ] `mix blenny.gen.module` generator shipped
+- [ ] All `@moduledoc` and `@doc` tags complete
+- [ ] Docs published on HexDocs
+- [ ] `CHANGELOG.md` reflects all releases
+- [ ] At least one external production user outside the monorepo
+- [ ] `mix blenny.install` shipped
+- [ ] Hex release v1.0.0
+
+## Component Tracking
+
+| Component | Status | Blockers |
+|-----------|--------|----------|
+| Connection struct | ✅ Done | — |
+| ETS Registry | ✅ Done | — |
+| Hub GenServer | ✅ Done | — |
+| Dedup enforcement | ✅ Done | — |
+| `max_connections` config | 🟡 Partial | Not enforced in Hub |
+| `max_per_user` config | 🟡 Partial | Not enforced in Hub |
+| Stale connection sweeper | ❌ Missing | — |
+| Connection draining | ❌ Missing | — |
+| Intent types + routing | ✅ Done | — |
+| Intent filtering per transport | ✅ Done | — |
+| Publisher (5 functions) | ✅ Done | — |
+| Publisher telemetry | ❌ Missing | — |
+| SSEPlug | ✅ Done | Unit tests missing |
+| LiveViewBridge | ✅ Done | — |
+| WebSocket transport | 🚫 Deferred | See rationale in Transport Layer section |
+| Module behaviour | ✅ Done | — |
+| Module discovery | ✅ Done | — |
+| Module lifecycle | ✅ Done | — |
+| Route registration (Blenny.Router macro) | 🟡 Partial | Macro design decided, needs implementation |
+| `auth/0` callback | 🚫 Deferred | Auth stays in host app; provide documented recipes |
+| Subscription wiring | ❌ Missing | Behaviour callback defined but unused |
+| Config validation (`nimble_options`) | ❌ Missing | Dep listed, never used |
+| Telemetry (any subsystem) | ❌ Missing | — |
+| Graceful shutdown | ❌ Missing | — |
+| Rate limiting | ❌ Missing | — |
+| Boot sequence | ✅ Done | — |
+| CI pipeline | ❌ Missing | — |
+| Dialyzer | ❌ Missing | — |
+| Coverage reporting | ❌ Missing | — |
+| Hex metadata | ✅ Done | — |
+| Hex publish | ❌ Missing | — |
+| Docs on HexDocs | ❌ Missing | — |
+| Generators (mix tasks) | ❌ Missing | — |
+| SSE token auth | 🚫 Deferred | Document as recipe (host app handles token validation) |
+| Auth integration patterns | 📝 Recipes needed | Document Pow, AshAuthentication, pipe_through patterns |
+
+## Dangling / Partial Items
+
+These are features described in `ARCHITECTURE.md` or the module behaviour that
+are partially implemented or not yet wired into the framework:
+
+| Item | Status | Impact |
+|------|--------|--------|
+| `routes/0` callback auto-mounting | `routes/0` defined, no Blenny.Router macro yet | Host app must add routes manually until macro is implemented |
+| `subscriptions/0` callback invocation | Defined in behaviour, never called by lifecycle | Modules declare subscriptions that are ignored |
+| `nimble_options` dependency | Listed in mix.exs, imported but never called | No config validation at boot |
+| `max_connections` / `max_per_user` config defaults | Defaults exist in config.ex, Hub never reads them | Limits are decorative |
+| `initialize/1` state | Only gets `%{pub_sub: pub_sub}` | No access to Hub ref, config, or registry |
+
+## Resolved Decisions
+
+These were previously listed as open questions. Decisions made on 2026-06-03.
+
+1. **Auth integration** — **Keep auth in host application.** No `auth/0`
+   callback on `Blenny.Module`. Injecting framework-level auth generation
+   violates Design Principle #8 (No framework lock-in). Elixir developers are
+   protective of their plug pipelines — forcing a Blenny-specific auth layout
+   map creates friction. Instead, use standard Phoenix Router `pipe_through`
+   for route security and `socket.assigns.current_user` for fine-grained
+   component access. Document recipes for common patterns (Pow,
+   AshAuthentication, etc.).
+
+2. **Connection recovery** — **Explicitly deferred.** Datastar manages its own
+   client-side reconnection loop. Blenny modules are either stateless
+   (declarative) or cleanly addressable via `Blenny.ModuleRegistry`. No
+   server-side state buffer cache needed. If an SSE stream drops and
+   reconnects, the frontend sends current state via its signals payload; the
+   backend reads signals, identifies the user, and resumes rendering.
+
+3. **Database / ORM** — **Zero opinions.** No `Blenny.ORM` abstraction. Elixir
+   community has rallied behind Ecto. Blenny stays focused on interactive
+   delivery and routing.
+
+4. **Route mounting** — **Provide `Blenny.Router` macro.** Idiomatic Elixir
+   (mirrors Phoenix.LiveDashboard, Oban.Web, Ash):
+   `import Blenny.Router` then `blenny_modules("/m")` in `router.ex`.
+
+## Release Checklist
+
+### Pre-Release (v0.2.0-pre)
+- [ ] Telemetry: Hub events
+- [ ] Enforcement: max_connections, max_per_user
+- [ ] Validation: nimble_options config check at boot
+- [ ] Tests: SSEPlug unit tests
+- [ ] Tests: SSE dashboard integration test
+- [ ] Wiring: routes/0 auto-mount mechanism
+- [ ] Docs: "Getting Started" guide
+- [ ] CI: GitHub Actions workflow
+- [ ] Changelog: v0.2.0-pre entry
+- [ ] Auth: integration recipes documented (Pow, AshAuthentication, pipe_through patterns)
+- [ ] Publish to Hex as 0.2.0-pre
+
+### Beta (v0.5.0-beta)
+- [ ] All pre-release items complete
+- [ ] Telemetry: Publisher + SSEPlug events
+- [ ] Graceful shutdown tested
+- [ ] Load test: 100 concurrent SSE
+- [ ] Rate limiting implemented
+- [ ] Stale connection sweeper
+- [ ] Auth: integration recipes complete, in docs
+- [ ] Connection draining
+- [ ] Dialyzer + Credo clean
+- [ ] Coverage ≥ 80%
+- [ ] subscriptions/0 wired
+- [ ] connected_users/0 API
+- [ ] Publish to Hex as 0.5.0-beta
+
+### Stable (v1.0.0)
+- [ ] All beta items complete
+- [x] WebSocket explicitly deferred (rationale documented in Transport Layer)
+- [x] Session recovery explicitly deferred (rationale in Resolved Decisions)
+- [ ] API surface stable
+- [ ] mix blenny.gen.module
+- [ ] mix blenny.install
+- [ ] All docs complete on HexDocs
+- [ ] Changelog complete
+- [ ] External production user
+- [ ] Publish to Hex as 1.0.0
+
+## Dependency Stack
+
+| Dependency | Purpose | Status |
+|-----------|---------|--------|
+| `phoenix` ~> 1.7 | HTTP server, routing, PubSub | ✅ Used |
+| `phoenix_live_view` ~> 1.0 | LiveView WebSocket transport | ✅ Used (optional) |
+| `bandit` ~> 1.5 | HTTP server | ✅ Used (optional) |
+| `jason` ~> 1.2 | JSON encoding/decoding | ✅ Used |
+| `dstar` ~> 0.0.10 | Datastar SSE wire format | ✅ Used |
+| `telemetry` ~> 1.0 | Instrumentation | 🟡 Imported but no events emitted |
+| `nimble_options` ~> 1.0 | Configuration validation | ❌ Listed but never invoked |
+| `ex_doc` | Documentation generator | ✅ Used (dev only) |
+
+## Testing Summary
+
+### Current: 65 unit tests + 4 integration tests = 69 total
+
+| Area | Tests | Priority for Next |
+|------|-------|-------------------|
+| Connection struct | 3 | 🟢 Low |
+| Registry | 13 | 🟢 Low |
+| Intent | 12 | 🟢 Low |
+| Config | 5 | 🟢 Low |
+| Error | 2 | 🟢 Low |
+| Hub | 7 | 🟢 Low |
+| Publisher | 9 | 🟢 Low |
+| Module | 3 | 🟢 Low |
+| Loader | 4 | 🟢 Low |
+| Lifecycle | 4 | 🟢 Low |
+| Bootstrap | 3 | 🟢 Low |
+| SSEPlug | **0** | 🔴 High |
+| SSE dashboard integration | 0 | 🟡 Medium |
+| LiveView integration | 4 | 🟢 Low |
+| Load/stress | **0** | 🔴 High |
+| Telemetry assertions | **0** | 🟡 Medium |
+| Auth/security | **0** | 🟡 Medium |
+
+---
+
+_Based on patterns from blenny-ts (TypeScript/Deno), blenny-rs (Rust),
+blenny-clj (Clojure), and the original blenny (Pharo Smalltalk)._

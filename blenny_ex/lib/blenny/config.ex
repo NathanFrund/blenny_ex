@@ -34,10 +34,14 @@ defmodule Blenny.Config do
     default = deep_get(@defaults, key_path)
 
     case app_value do
-      nil -> default
+      nil ->
+        default
+
       val when is_list(val) and is_atom(hd(key_path)) ->
         Keyword.merge(default || [], val)
-      val -> val
+
+      val ->
+        val
     end
   end
 
@@ -53,6 +57,7 @@ defmodule Blenny.Config do
   defp deep_get(nil, _), do: nil
   defp deep_get(_, []), do: nil
   defp deep_get(kw, [k]) when is_list(kw), do: kw[k]
+
   defp deep_get(kw, [k | rest]) when is_list(kw) do
     case kw[k] do
       nil -> nil

@@ -1,4 +1,4 @@
-# blenny_ex — Architecture & Implementation Roadmap
+# blenny_ex — Architecture
 
 ## Project Identity
 
@@ -184,50 +184,6 @@ config :blenny_ex, pub_sub: MyApp.PubSub
 Accessed at runtime via `Blenny.pub_sub/0`, used by Publisher, SSE plug,
 LiveView bridge, and Hub.
 
-## Implementation Roadmap
-
-### Phase 1: Connection Core (✅)
-
-- `Blenny.Connection` struct
-- `Blenny.Connection.Registry` (ETS tables)
-- `Blenny.Hub` GenServer (lifecycle, monitoring, dedup)
-
-### Phase 2: Intents (✅)
-
-- `Blenny.Intent` — types, topic mapping, parsing
-- Connection-level intent filtering
-- SSE and LiveView subscribe to PubSub topics directly
-
-### Phase 3: Publisher + Transports (✅)
-
-- `Blenny.Publisher` — zero-ceremony broadcast/direct API
-- `Blenny.Transport.SSEPlug` — long-lived SSE with Datastar wire format
-- `Blenny.Transport.LiveViewBridge` — LiveView on_mount hook
-
-### Phase 4: Module System (✅)
-
-- `Blenny.Module` behaviour + compile-time discovery
-- `child_spec/1` callback for supervised background processes
-- `Blenny.ModuleRegistry` (Elixir `Registry`) + `Blenny.ModuleSupervisor` (DynamicSupervisor)
-- Per-module route registration
-
-### Phase 5: Production Hardening (🔜)
-
-- Graceful shutdown (SIGINT/SIGTERM → DynamicSupervisor handles it)
-- Connection draining on deploy
-- Telemetry/metrics instrumentation
-- Rate limiting per connection
-- Reconnection backoff strategy for SSE clients
-
-### Phase 6: Advanced Features (🔮)
-
-- WebSocket transport (optional sidecar)
-- Auth module strategy pattern (pluggable middleware)
-- Session-level state serialization across reconnects
-- `blenny_ex` published to Hex.pm
-- `mix blenny.gen.module` generator
-- CLI scaffold for new applications
-
 ## Dependency Stack
 
 | Dependency               | Purpose                                    |
@@ -262,22 +218,6 @@ blenny_elixir/
     │                               {:blenny_ex, path: "../blenny_ex"}
     └── test/                   ← Integration tests
 ```
-
-## Open Questions
-
-1. **WebSocket transport** — should this exist as an optional sidecar (like
-   Rust/Clojure versions) or fold into the existing LiveView transport? SSE
-   alone covers most real-time use cases, and LiveView already provides
-   WebSocket for Phoenix-native clients.
-2. **Auth integration** — should `Blenny.Module` gain an optional
-   `auth/0` callback that returns middleware config, or keep auth entirely
-   in the host application?
-3. **Connection recovery** — SSE clients that drop and reconnect get a new
-   UUID. Should we track a "session token" cookie to restore the previous
-   connection's state (subscriptions, filters)?
-4. **Database** — leave it to the host app (zero framework opinions) or
-   provide an optional `Blenny.ORM` behaviour for modules that need
-   persistence?
 
 ---
 

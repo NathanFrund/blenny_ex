@@ -28,11 +28,12 @@ defmodule Blenny do
       config :blenny_ex, pub_sub: MyApp.PubSub
   """
   def pub_sub do
-    Application.get_env(:blenny_ex, :pub_sub) || raise """
-    Blenny requires a PubSub module configured.
-    Set in your config.exs:
+    Application.get_env(:blenny_ex, :pub_sub) ||
+      raise """
+      Blenny requires a PubSub module configured.
+      Set in your config.exs:
 
-        config :blenny_ex, pub_sub: MyApp.PubSub
-    """
+          config :blenny_ex, pub_sub: MyApp.PubSub
+      """
   end
 end

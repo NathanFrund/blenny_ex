@@ -1,5 +1,6 @@
 defmodule Blenny.Module.Lifecycle do
   require Logger
+
   @moduledoc """
   Orchestrates the module lifecycle — initialize and supervised start.
 
@@ -28,8 +29,11 @@ defmodule Blenny.Module.Lifecycle do
       end
     end)
     |> case do
-      :ok -> :ok
-      {:error, mod, reason} -> raise "Module #{inspect(mod)} initialize failed: #{inspect(reason)}"
+      :ok ->
+        :ok
+
+      {:error, mod, reason} ->
+        raise "Module #{inspect(mod)} initialize failed: #{inspect(reason)}"
     end
   end
 

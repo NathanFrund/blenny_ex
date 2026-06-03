@@ -121,9 +121,12 @@ defmodule Blenny.Connection.Registry do
   """
   @spec clear() :: :ok
   def clear do
-    :ets.delete_all_objects(@table_name)
-    :ets.delete_all_objects(@dedup_index)
-    :ets.delete_all_objects(@user_index)
+    for table <- [@table_name, @dedup_index, @user_index] do
+      if :ets.info(table) != :undefined do
+        :ets.delete_all_objects(table)
+      end
+    end
+
     :ok
   end
 

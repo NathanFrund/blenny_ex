@@ -90,6 +90,8 @@ defmodule Blenny.Hub do
       if existing do
         send(existing.transport_pid, {:blenny_replaced, conn.transport_pid})
         demonitor_if_pid(state, existing.transport_pid)
+        Blenny.Connection.Registry.unregister(existing.id)
+        state
       else
         state
       end
@@ -149,8 +151,7 @@ defmodule Blenny.Hub do
     %{
       state
       | monitors_by_ref: Map.put(state.monitors_by_ref, ref, conn_id),
-        monitors_by_conn:
-          Map.put(state.monitors_by_conn, conn_id, %{ref: ref, pid: pid})
+        monitors_by_conn: Map.put(state.monitors_by_conn, conn_id, %{ref: ref, pid: pid})
     }
   end
 
@@ -159,7 +160,7 @@ defmodule Blenny.Hub do
   defp demonitor_if_pid(state, pid) when is_pid(pid) do
     {refs, monitors_by_conn} =
       Enum.reduce(state.monitors_by_conn, {[], %{}}, fn {conn_id, %{ref: ref, pid: p}},
-                                                         {refs_acc, rest_acc} ->
+                                                        {refs_acc, rest_acc} ->
         if p == pid do
           Process.demonitor(ref, [:flush])
           {[ref | refs_acc], rest_acc}

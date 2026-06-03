@@ -40,6 +40,7 @@ defmodule Blenny.Transport.SSEPlug do
     :ok = Blenny.Hub.register_connection(conn_struct)
 
     pubsub = Blenny.pub_sub()
+
     for intent <- Blenny.Intent.routing() do
       Phoenix.PubSub.subscribe(pubsub, Blenny.Intent.to_topic(intent), link: true)
     end
@@ -88,7 +89,9 @@ defmodule Blenny.Transport.SSEPlug do
 
   defp safe_patch_elements(conn, html) when is_binary(html) do
     case extract_selector(html) do
-      nil -> {:ok, conn}
+      nil ->
+        {:ok, conn}
+
       selector ->
         try do
           {:ok, Dstar.patch_elements(conn, html, selector: selector)}
@@ -124,7 +127,8 @@ defmodule Blenny.Transport.SSEPlug do
 
   defp safe_execute_script(conn, _), do: {:ok, conn}
 
-  defp extract_selector(html) do
+  @doc false
+  def extract_selector(html) do
     case Regex.run(~r/\sid=['"]([^'"]+)['"]/, html) do
       [_, id] -> "##{id}"
       nil -> nil
