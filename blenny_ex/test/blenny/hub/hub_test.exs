@@ -114,4 +114,97 @@ defmodule Blenny.HubTest do
     c2 = Blenny.Connection.new("c2", :liveview, user_id: "bob", transport_pid: self())
     assert {:error, :too_many_per_user} = Blenny.Hub.register_connection(hub_name, c2)
   end
+
+  # ── Telemetry ───────────────────────────────────────────────────
+
+  def telemetry_handler(event_name, measurements, metadata, config) do
+    send(config[:test_pid], {event_name, measurements, metadata})
+  end
+
+  defp attach_telemetry_handler do
+    handler_id = "hub-test-#{System.unique_integer([:positive])}"
+
+    events = [
+      [:blenny, :hub, :connection, :register],
+      [:blenny, :hub, :connection, :unregister],
+      [:blenny, :hub, :connection, :rejected]
+    ]
+
+    config = %{test_pid: self()}
+
+    for event <- events do
+      :telemetry.attach("#{handler_id}-#{inspect(event)}", event, &telemetry_handler/4, config)
+    end
+
+    on_exit(fn ->
+      for event <- events do
+        :telemetry.detach("#{handler_id}-#{inspect(event)}")
+      end
+    end)
+  end
+
+  test "emits register telemetry on successful connection", %{hub: hub} do
+    attach_telemetry_handler()
+
+    conn = Blenny.Connection.new("t-reg-1", :liveview, user_id: "alice", transport_pid: self())
+    {:ok, _} = Blenny.Hub.register_connection(hub, conn)
+
+    assert_receive {[:blenny, :hub, :connection, :register], %{count: count}, %{user_id: "alice", conn_type: :liveview}}
+    assert count >= 1
+  end
+
+  test "emits rejected telemetry on max_connections" do
+    attach_telemetry_handler()
+
+    lim_hub = :"telem_max_conn_#{System.unique_integer([:positive])}"
+    {:ok, pid} = Blenny.Hub.start_link(name: lim_hub, max_connections: 1, max_per_user: 10)
+    on_exit(fn -> Process.exit(pid, :kill) end)
+
+    c1 = Blenny.Connection.new("t-rej-1", :sse, transport_pid: self())
+    assert {:ok, _} = Blenny.Hub.register_connection(lim_hub, c1)
+
+    c2 = Blenny.Connection.new("t-rej-2", :liveview, transport_pid: self())
+    assert {:error, :too_many_connections} = Blenny.Hub.register_connection(lim_hub, c2)
+
+    assert_receive {[:blenny, :hub, :connection, :rejected], %{count: _}, %{limit_type: :max_connections}}
+  end
+
+  test "emits rejected telemetry on max_per_user" do
+    attach_telemetry_handler()
+
+    lim_hub = :"telem_max_user_#{System.unique_integer([:positive])}"
+    {:ok, pid} = Blenny.Hub.start_link(name: lim_hub, max_connections: 10, max_per_user: 1)
+    on_exit(fn -> Process.exit(pid, :kill) end)
+
+    c1 = Blenny.Connection.new("t-per-1", :sse, user_id: "charlie", transport_pid: self())
+    assert {:ok, _} = Blenny.Hub.register_connection(lim_hub, c1)
+
+    c2 = Blenny.Connection.new("t-per-2", :liveview, user_id: "charlie", transport_pid: self())
+    assert {:error, :too_many_per_user} = Blenny.Hub.register_connection(lim_hub, c2)
+
+    assert_receive {[:blenny, :hub, :connection, :rejected], %{count: _}, %{limit_type: :max_per_user}}
+  end
+
+  test "emits unregister telemetry on explicit unregister", %{hub: hub} do
+    attach_telemetry_handler()
+
+    conn = Blenny.Connection.new("t-unreg-1", :sse, user_id: "dave", transport_pid: self())
+    {:ok, _} = Blenny.Hub.register_connection(hub, conn)
+    Blenny.Hub.unregister_connection(hub, "t-unreg-1")
+
+    assert_receive {[:blenny, :hub, :connection, :unregister], %{count: _}, %{user_id: "dave", conn_type: :sse, reason: :explicit}}
+  end
+
+  test "emits unregister telemetry on process DOWN", %{hub: hub} do
+    attach_telemetry_handler()
+
+    pid = spawn(fn -> Process.sleep(:infinity) end)
+    conn = Blenny.Connection.new("t-down-1", :liveview, user_id: "eve", transport_pid: pid)
+    {:ok, _} = Blenny.Hub.register_connection(hub, conn)
+
+    Process.exit(pid, :kill)
+    :timer.sleep(50)
+
+    assert_receive {[:blenny, :hub, :connection, :unregister], %{count: _}, %{user_id: "eve", conn_type: :liveview, reason: :process_down}}
+  end
 end

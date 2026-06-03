@@ -97,12 +97,24 @@ defmodule Blenny.Hub do
     conn_count = Blenny.Connection.Registry.count()
 
     if conn_count >= state.max_connections do
+      :telemetry.execute(
+        [:blenny, :hub, :connection, :rejected],
+        %{count: conn_count},
+        %{user_id: conn.user_id, conn_type: conn.conn_type, limit_type: :max_connections}
+      )
+
       {:reply, {:error, :too_many_connections}, state}
     else
       dedup_key = dedup_key(conn)
       per_user_count = Blenny.Connection.Registry.count_by_dedup_key(dedup_key)
 
       if per_user_count >= state.max_per_user do
+        :telemetry.execute(
+          [:blenny, :hub, :connection, :rejected],
+          %{count: conn_count},
+          %{user_id: conn.user_id, conn_type: conn.conn_type, limit_type: :max_per_user}
+        )
+
         {:reply, {:error, :too_many_per_user}, state}
       else
         existing = Blenny.Connection.Registry.lookup_by_dedup_key(dedup_key, conn.conn_type)
@@ -120,6 +132,12 @@ defmodule Blenny.Hub do
         {:ok, _} = Blenny.Connection.Registry.register(conn)
         state = monitor_if_pid(state, conn)
 
+        :telemetry.execute(
+          [:blenny, :hub, :connection, :register],
+          %{count: Blenny.Connection.Registry.count()},
+          %{user_id: conn.user_id, conn_type: conn.conn_type}
+        )
+
         {:reply, {:ok, conn}, state}
       end
     end
@@ -127,8 +145,18 @@ defmodule Blenny.Hub do
 
   @impl true
   def handle_call({:unregister_connection, conn_id}, _from, state) do
-    conn = Blenny.Connection.Registry.unregister(conn_id)
+    conn = Blenny.Connection.Registry.lookup(conn_id)
+    Blenny.Connection.Registry.unregister(conn_id)
     state = demonitor_if_pid(state, conn && conn.transport_pid)
+
+    if conn do
+      :telemetry.execute(
+        [:blenny, :hub, :connection, :unregister],
+        %{count: Blenny.Connection.Registry.count()},
+        %{user_id: conn.user_id, conn_type: conn.conn_type, reason: :explicit}
+      )
+    end
+
     {:reply, conn, state}
   end
 
@@ -154,7 +182,16 @@ defmodule Blenny.Hub do
         {:noreply, state}
 
       conn_id ->
+        conn = Blenny.Connection.Registry.lookup(conn_id)
         Blenny.Connection.Registry.unregister(conn_id)
+
+        if conn do
+          :telemetry.execute(
+            [:blenny, :hub, :connection, :unregister],
+            %{count: Blenny.Connection.Registry.count()},
+            %{user_id: conn.user_id, conn_type: conn.conn_type, reason: :process_down}
+          )
+        end
 
         {:noreply,
          %{
