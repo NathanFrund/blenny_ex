@@ -313,6 +313,48 @@ config :blenny_ex, hub: [
 ]
 ```
 
+## Telemetry
+
+Blenny emits three `:telemetry` events from the Hub on connection lifecycle
+changes. Add metrics to your app's `MyApp.Telemetry.metrics/0` to see live
+graphs in Phoenix LiveDashboard:
+
+```elixir
+def metrics do
+  [
+    # Active connections (streaming gauge)
+    last_value("blenny.hub.connection.register.count",
+      description: "Active Blenny connections"
+    ),
+
+    # Rejected connections — tag by :limit_type to distinguish
+    # :max_connections (system-wide) from :max_per_user (per-client)
+    counter("blenny.hub.connection.rejected.count",
+      tags: [:limit_type],
+      description: "Rejected Blenny connections"
+    )
+  ]
+end
+```
+
+Then add the `:blenny.hub` prefix to LiveDashboard in your router:
+
+```elixir
+live_dashboard "/dashboard",
+  metrics: MyApp.Telemetry,
+  additional_page: [
+    blenny: %{metrics: ~r/^blenny\.hub/}
+  ]
+```
+
+### Event reference
+
+| Event prefix | Measurements | Metadata | Fires when |
+|---|---|---|---|
+| `[:blenny, :hub, :connection, :register]` | `count` | `user_id`, `conn_type` | Connection registered successfully |
+| `[:blenny, :hub, :connection, :unregister]` | `count` | `user_id`, `conn_type`, `reason` (`:explicit` \| `:process_down`) | Connection removed |
+| `[:blenny, :hub, :connection, :rejected]` | `count` | `user_id`, `conn_type`, `limit_type` (`:max_connections` \| `:max_per_user`) | Connection rejected by a limit |
+
 ## License
 
 MIT
