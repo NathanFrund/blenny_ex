@@ -134,8 +134,8 @@ global name collisions. Two files per store: `users.dets` (primary) +
 | **Auth via modules** | Module owns storage, UI, crypto. Framework provides registry + plugs. Swapping the module swaps the entire auth UX. Reverses earlier "keep in host app" decision. |
 | **DETS over SQLite/CubDB** | Zero external deps. Built into OTP since the 1990s. Single-file, ACID, crash-safe. 2GB/32M row limits sufficient for any single-node deployment. |
 | **DETS with file-path (not atom)** | `:dets.open_file/2` with a string returns a process-local reference. Avoids global atom namespace collision, enabling multiple instances under one supervisor. |
-| **WebSocket deferred** | Phoenix LiveView already provides optimized WS channel. Adding raw WS sidecar duplicates overhead for zero functional gain. Clients use `Phoenix.Channel` if needed. |
-| **Connection recovery deferred** | Datastar manages client-side reconnection. Frontend sends state via signals on reconnect. No server-side state buffer needed. |
+| **WebSocket declined** | Phoenix LiveView already provides an optimized, clustered WebSocket channel. Adding a raw WS sidecar duplicates overhead for zero functional gain. Non-Phoenix clients use `Phoenix.Channel` directly. |
+| **Connection recovery declined** | Datastar manages client-side reconnection. Frontend sends state via signals on reconnect. No server-side state buffer needed. |
 | **Database/ORM: zero opinions** | No `Blenny.ORM` abstraction. Community uses Ecto. Blenny stays focused on transport and routing. |
 | **DateTime: no tzdata** | `:calendar.local_time()` + `:erlang.time_offset()` for local time. `DateTime.add/3` on OTP 29 takes 197ms — use `:calendar.gregorian_seconds_to_datetime/1` (11μs). |
 | **ETS `async: false` tests** | Named ETS tables are process-global. Parallel test suites share them. Use `async: false` for ETS-backed stores or guard with `:ets.info` before delete. |
@@ -176,7 +176,7 @@ global name collisions. Two files per store: `users.dets` (primary) +
 - **LiveView Delivers Pass-Through:** LiveView receives the same
   `{:blenny_msg, intent, payload}` tuples. No transport-specific message
   wrapping in the framework layer.
-- **WS Sends Not Implemented:** WebSocket is explicitly deferred. Do not add
+- **WS Sends Not Implemented:** WebSocket is consciously declined. Do not add
   a raw WebSocket sidecar.
 
 ### Auth & Security
@@ -366,7 +366,7 @@ blenny_example_app/
 | Feature | blenny-ts | blenny_ex | Status |
 |---|---|---|---|
 | SSE transport | Datastar SDK | `dstar` Hex package | ✅ |
-| WebSocket transport | Raw WS sidecar | 🚫 Deferred (LiveView) | 🚫 Deferred |
+| WebSocket transport | Raw WS sidecar | 🚫 Declined (LiveView suffices) | Conscious decision |
 | Auth module | `form-auth.tsx` | `BlennyTestApp.Blenny.FormAuth` | ✅ |
 | Publisher API | 5 functions | 5 functions | ✅ |
 | Config validation | Valibot | `nimble_options` validates at boot | ✅ |
@@ -379,7 +379,7 @@ blenny_example_app/
 | Durable KV | Deno KV | DETS | ✅ |
 | Blob store | `FsBlobStore` | `Blenny.Storage.Impl.FSBlob` | ✅ |
 | Role-based access | `requireRole` | `RequireRole` plug | ✅ |
-| Connection recovery | Cookie + restore | 🚫 Deferred | 🚫 Deferred |
+| Connection recovery | Cookie + restore | 🚫 Declined (Datastar handles it) | Conscious decision |
 | Logger middleware | LogTape + requestLogger | Not implemented | ❌ |
 | Boot-time conflict detection | Capability check | ✅ | ✅ |
 

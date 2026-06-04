@@ -47,7 +47,7 @@ to Hex as an independent dependency; the test app ships in the same monorepo.
    auto-mounted via `Blenny.Router` macro, subscriptions auto-wired)
 3. All production-hardening features are implemented (telemetry, rate
    limiting, connection draining, graceful shutdown, config validation)
-4. WebSocket transport explicitly deferred with documented rationale (see
+4. WebSocket transport consciously declined with documented rationale (see
    Transport Layer section); SSE + LiveView cover all real-time use cases
 5. Auth integration recipes documented for common patterns (Pow,
    AshAuthentication, `pipe_through`); no auth callbacks in Blenny.Module
@@ -84,12 +84,12 @@ subscriptions, lifecycle, capabilities — flows through `Blenny.Module`.
 | LiveView `handle_info({:blenny_msg, intent, payload})` | ✅ Done | — |
 | Intent filtering per-transport | ✅ Done | — |
 | `{:blenny_replaced, pid}` handling | ✅ Done | — |
-| WebSocket transport (optional sidecar for non-Phoenix clients) | 🚫 Deferred | See rationale below table |
-| Connection recovery (session token cookie, restore state on reconnect) | 🚫 Deferred | Datastar manages client-side reconnection. Frontend sends state via signals on reconnect. See Resolved Decisions. |
+| WebSocket transport (optional sidecar for non-Phoenix clients) | 🚫 Declined | See rationale below table |
+| Connection recovery (session token cookie, restore state on reconnect) | 🚫 Declined | Datastar manages client-side reconnection. Frontend sends state via signals on reconnect. See Resolved Decisions. |
 | SSE reconnection backoff strategy | ❌ Missing | Document expected client behavior (default: Datastar's built-in backoff may suffice) |
 | Transport-level graceful disconnect (close frame on SIGTERM) | ❌ Missing | SSEPlug needs `trap_exit` + close frame |
 
-**WebSocket Transport — Deferral Rationale:**
+**WebSocket Transport — Declined Rationale:**
 
 Phoenix LiveView already provides an ultra-optimized, clustered WebSocket
 channel implementation via `LiveViewBridge`. Adding a parallel raw WebSocket
@@ -243,8 +243,8 @@ Feature-complete, stable API, external validation.
 
 Exit criteria:
 - [ ] All M2 items complete
-- [x] WebSocket transport explicitly deferred with documented rationale
-- [x] Session-level state serialization across reconnects explicitly deferred (rationale in Resolved Decisions)
+- [x] WebSocket transport consciously declined with documented rationale
+- [x] Session-level state serialization across reconnects consciously declined (rationale in Resolved Decisions)
 - [ ] API surface stable (no breaking changes planned for 1.x)
 - [ ] `mix blenny.gen.module` generator shipped
 - [ ] All `@moduledoc` and `@doc` tags complete
@@ -272,7 +272,7 @@ Exit criteria:
 | Publisher telemetry | ❌ Missing | — |
 | SSEPlug | ✅ Done | Unit tests missing |
 | LiveViewBridge | ✅ Done | — |
-| WebSocket transport | 🚫 Deferred | See rationale in Transport Layer section |
+| WebSocket transport | 🚫 Declined | See rationale in Transport Layer section |
 | Module behaviour | ✅ Done | — |
 | Module discovery | ✅ Done | — |
 | Module lifecycle | ✅ Done | — |
@@ -323,7 +323,7 @@ These were previously listed as open questions.
    eliminating the boilerplate of manual route wiring and plug
    configuration.
 
-2. **Connection recovery** — **Explicitly deferred.** Datastar manages its own
+2. **Connection recovery** — **Consciously declined.** Datastar manages its own
    client-side reconnection loop. Blenny modules are either stateless
    (declarative) or cleanly addressable via `Blenny.ModuleRegistry`. No
    server-side state buffer cache needed. If an SSE stream drops and
@@ -370,8 +370,8 @@ These were previously listed as open questions.
 
 ### Stable (v1.0.0)
 - [ ] All beta items complete
-- [x] WebSocket explicitly deferred (rationale documented in Transport Layer)
-- [x] Session recovery explicitly deferred (rationale in Resolved Decisions)
+- [x] WebSocket consciously declined (rationale documented in Transport Layer)
+- [x] Session recovery consciously declined (rationale in Resolved Decisions)
 - [ ] API surface stable
 - [ ] mix blenny.gen.module
 - [ ] mix blenny.install
