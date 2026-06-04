@@ -76,6 +76,22 @@ defmodule Blenny.Config do
           type: :boolean,
           default: false,
           doc: "Whether authentication is required for all connections"
+        ],
+        rate_limit: [
+          type: :keyword_list,
+          default: [],
+          keys: [
+            max_messages: [
+              type: :pos_integer,
+              doc: "Max messages per window per connection (nil = no limit)"
+            ],
+            window_ms: [
+              type: :pos_integer,
+              default: 1000,
+              doc: "Sliding window in milliseconds"
+            ]
+          ],
+          doc: "Per-connection message rate limiting (empty = no limit)"
         ]
       ],
       doc: "Transport-level settings"

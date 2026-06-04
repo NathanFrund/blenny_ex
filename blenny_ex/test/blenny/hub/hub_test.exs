@@ -149,7 +149,9 @@ defmodule Blenny.HubTest do
     conn = Blenny.Connection.new("t-reg-1", :liveview, user_id: "alice", transport_pid: self())
     {:ok, _} = Blenny.Hub.register_connection(hub, conn)
 
-    assert_receive {[:blenny, :hub, :connection, :register], %{count: count}, %{user_id: "alice", conn_type: :liveview}}
+    assert_receive {[:blenny, :hub, :connection, :register], %{count: count},
+                    %{user_id: "alice", conn_type: :liveview}}
+
     assert count >= 1
   end
 
@@ -166,7 +168,8 @@ defmodule Blenny.HubTest do
     c2 = Blenny.Connection.new("t-rej-2", :liveview, transport_pid: self())
     assert {:error, :too_many_connections} = Blenny.Hub.register_connection(lim_hub, c2)
 
-    assert_receive {[:blenny, :hub, :connection, :rejected], %{count: _}, %{limit_type: :max_connections}}
+    assert_receive {[:blenny, :hub, :connection, :rejected], %{count: _},
+                    %{limit_type: :max_connections}}
   end
 
   test "emits rejected telemetry on max_per_user" do
@@ -182,7 +185,8 @@ defmodule Blenny.HubTest do
     c2 = Blenny.Connection.new("t-per-2", :liveview, user_id: "charlie", transport_pid: self())
     assert {:error, :too_many_per_user} = Blenny.Hub.register_connection(lim_hub, c2)
 
-    assert_receive {[:blenny, :hub, :connection, :rejected], %{count: _}, %{limit_type: :max_per_user}}
+    assert_receive {[:blenny, :hub, :connection, :rejected], %{count: _},
+                    %{limit_type: :max_per_user}}
   end
 
   test "emits unregister telemetry on explicit unregister", %{hub: hub} do
@@ -192,7 +196,8 @@ defmodule Blenny.HubTest do
     {:ok, _} = Blenny.Hub.register_connection(hub, conn)
     Blenny.Hub.unregister_connection(hub, "t-unreg-1")
 
-    assert_receive {[:blenny, :hub, :connection, :unregister], %{count: _}, %{user_id: "dave", conn_type: :sse, reason: :explicit}}
+    assert_receive {[:blenny, :hub, :connection, :unregister], %{count: _},
+                    %{user_id: "dave", conn_type: :sse, reason: :explicit}}
   end
 
   test "emits unregister telemetry on process DOWN", %{hub: hub} do
@@ -205,7 +210,8 @@ defmodule Blenny.HubTest do
     Process.exit(pid, :kill)
     :timer.sleep(50)
 
-    assert_receive {[:blenny, :hub, :connection, :unregister], %{count: _}, %{user_id: "eve", conn_type: :liveview, reason: :process_down}}
+    assert_receive {[:blenny, :hub, :connection, :unregister], %{count: _},
+                    %{user_id: "eve", conn_type: :liveview, reason: :process_down}}
   end
 
   # ── Graceful Drain ─────────────────────────────────────────────
@@ -224,11 +230,12 @@ defmodule Blenny.HubTest do
     on_exit(fn -> Process.exit(pid, :kill) end)
 
     # Register a transport that exits immediately on drain signal
-    transport_pid = spawn(fn ->
-      receive do
-        {:blenny_drain, _deadline} -> :ok
-      end
-    end)
+    transport_pid =
+      spawn(fn ->
+        receive do
+          {:blenny_drain, _deadline} -> :ok
+        end
+      end)
 
     conn = Blenny.Connection.new("drain-reject", :sse, transport_pid: transport_pid)
     {:ok, _} = Blenny.Hub.register_connection(hub_name, conn)
@@ -254,11 +261,13 @@ defmodule Blenny.HubTest do
     on_exit(fn -> Process.exit(pid, :kill) end)
 
     test_pid = self()
-    transport_pid = spawn(fn ->
-      receive do
-        {:blenny_drain, _deadline} -> send(test_pid, :signaled)
-      end
-    end)
+
+    transport_pid =
+      spawn(fn ->
+        receive do
+          {:blenny_drain, _deadline} -> send(test_pid, :signaled)
+        end
+      end)
 
     conn = Blenny.Connection.new("drain-signal", :sse, transport_pid: transport_pid)
     {:ok, _} = Blenny.Hub.register_connection(hub_name, conn)
@@ -278,11 +287,12 @@ defmodule Blenny.HubTest do
     {:ok, pid} = Blenny.Hub.start_link(name: hub_name, drain_timeout: 5_000)
     on_exit(fn -> Process.exit(pid, :kill) end)
 
-    transport_pid = spawn(fn ->
-      receive do
-        {:blenny_drain, _deadline} -> :ok
-      end
-    end)
+    transport_pid =
+      spawn(fn ->
+        receive do
+          {:blenny_drain, _deadline} -> :ok
+        end
+      end)
 
     conn = Blenny.Connection.new("drain-clean", :sse, transport_pid: transport_pid)
     {:ok, _} = Blenny.Hub.register_connection(hub_name, conn)

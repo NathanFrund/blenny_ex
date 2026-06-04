@@ -461,6 +461,72 @@ defmodule Blenny.Transport.SSEPlugTest do
     end
   end
 
+  # ================================================================
+  # Rate limiting under Bandit
+  # ================================================================
+
+  describe "rate limiting under Bandit" do
+    @pubsub :sse_rate_limit_pubsub
+    @moduletag :bandit
+
+    setup do
+      start_supervised!({Phoenix.PubSub.Supervisor, name: @pubsub})
+      Application.put_env(:blenny_ex, :pub_sub, @pubsub)
+
+      original_transport = Application.get_env(:blenny_ex, :transport)
+
+      Application.put_env(:blenny_ex, :transport,
+        rate_limit: [max_messages: 2, window_ms: 10_000]
+      )
+
+      on_exit(fn ->
+        if original_transport do
+          Application.put_env(:blenny_ex, :transport, original_transport)
+        else
+          Application.delete_env(:blenny_ex, :transport)
+        end
+      end)
+
+      start_supervised!({Blenny.Hub, [name: Blenny.Hub]})
+
+      bandit_pid =
+        start_supervised!(
+          {Bandit,
+           [
+             plug: Blenny.Test.SSEEndpoint,
+             port: 0,
+             thousand_island_options: [shutdown_timeout: 100]
+           ]}
+        )
+
+      {:ok, info} = ThousandIsland.listener_info(bandit_pid)
+      {_ip, port} = info
+
+      {:ok, port: port, pubsub: @pubsub}
+    end
+
+    test "drops messages above rate limit", %{port: port, pubsub: pubsub} do
+      {socket, _headers} = connect_and_request(port)
+      :timer.sleep(100)
+
+      # Publish 3 messages — only 2 should be delivered within the rate limit window
+      raw1 = publish_and_read(pubsub, :ui, %{signals: %{"seq" => 1}}, socket)
+      raw2 = publish_and_read(pubsub, :ui, %{signals: %{"seq" => 2}}, socket)
+      raw3 = publish_and_read(pubsub, :ui, %{signals: %{"seq" => 3}}, socket)
+
+      all_raw = raw1 <> raw2 <> raw3
+      events = extract_events(all_raw)
+
+      signal_events =
+        Enum.filter(events, fn ev ->
+          String.contains?(ev, "datastar-patch-signals")
+        end)
+
+      assert length(signal_events) <= 2,
+             "Expected at most 2 signal events (rate limited to 2), got #{length(signal_events)}"
+    end
+  end
+
   # ── Private helpers ───────────────────────────────────────────────
 
   defp pos_in(chunks, substring) do

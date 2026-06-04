@@ -38,6 +38,11 @@ defmodule Blenny.Transport.SSEPlug do
 
     Process.flag(:trap_exit, true)
 
+    transport_config = Blenny.Config.get_all(:transport)
+    rate_config = transport_config[:rate_limit] || []
+    max_messages = rate_config[:max_messages]
+    window_ms = rate_config[:window_ms] || 1000
+
     case Blenny.Hub.register_connection(conn_struct) do
       {:ok, _conn} ->
         pubsub = Blenny.pub_sub()
@@ -49,7 +54,7 @@ defmodule Blenny.Transport.SSEPlug do
         user_topic = Blenny.Intent.user_topic(user_id || conn_id)
         Phoenix.PubSub.subscribe(pubsub, user_topic, link: true)
 
-        sse_loop(conn, conn_id, intents)
+        sse_loop(conn, conn_id, intents, max_messages, window_ms)
 
       {:error, _reason} ->
         conn
@@ -58,20 +63,34 @@ defmodule Blenny.Transport.SSEPlug do
     end
   end
 
-  defp sse_loop(conn, conn_id, intents) do
+  defp sse_loop(conn, conn_id, intents, max_messages, window_ms) do
     receive do
       {:blenny_msg, intent, payload} ->
         if Blenny.Intent.accepts?(intents, intent) do
-          case write_events(conn, payload) do
-            {:ok, conn} -> sse_loop(conn, conn_id, intents)
-            {:error, _conn} -> cleanup(conn, conn_id)
+          if max_messages && Blenny.RateLimiter.check(:msg_rate, max_messages, window_ms) != :ok do
+            :telemetry.execute(
+              [:blenny, :transport, :sse, :rate_limited],
+              %{},
+              %{conn_id: conn_id}
+            )
+
+            sse_loop(conn, conn_id, intents, max_messages, window_ms)
+          else
+            case write_events(conn, payload) do
+              {:ok, conn} -> sse_loop(conn, conn_id, intents, max_messages, window_ms)
+              {:error, _conn} -> cleanup(conn, conn_id)
+            end
           end
         else
-          sse_loop(conn, conn_id, intents)
+          sse_loop(conn, conn_id, intents, max_messages, window_ms)
         end
 
       {:blenny_drain, _deadline} ->
-        safe_execute_script(conn, ~s|setTimeout(() => location.reload(), Math.floor(Math.random() * 5000) + 1000)|)
+        safe_execute_script(
+          conn,
+          ~s|setTimeout(() => location.reload(), Math.floor(Math.random() * 5000) + 1000)|
+        )
+
         cleanup(conn, conn_id)
 
       {:blenny_replaced, _new_pid} ->

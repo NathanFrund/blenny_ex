@@ -2,7 +2,12 @@ defmodule Blenny.ConfigTest do
   use ExUnit.Case, async: false
 
   test "get/1 returns default values when not configured" do
-    assert Blenny.Config.get(:hub) == [max_connections: 10_000, max_per_user: 100, drain_timeout: 30_000]
+    assert Blenny.Config.get(:hub) == [
+             max_connections: 10_000,
+             max_per_user: 100,
+             drain_timeout: 30_000
+           ]
+
     assert Blenny.Config.get(:transport) == [idle_timeout_ms: 300_000, auth_required: false]
   end
 

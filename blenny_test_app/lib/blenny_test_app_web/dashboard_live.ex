@@ -9,9 +9,18 @@ defmodule BlennyTestAppWeb.DashboardLive do
       <div class="mx-auto max-w-4xl px-4 py-8">
         <h1 class="text-2xl font-bold mb-2">Blenny Dashboard</h1>
 
-        <div :if={@display_name} class="mb-4 flex items-center gap-2 rounded-lg border bg-green-50 p-3 text-sm">
+        <div
+          :if={@display_name}
+          class="mb-4 flex items-center gap-2 rounded-lg border bg-green-50 p-3 text-sm"
+        >
           <span class="text-green-700">Signed in as <strong>{@display_name}</strong></span>
-          <.link href="/auth/signout" method="post" class="ml-auto text-sm text-gray-500 hover:text-gray-700 underline">Sign out</.link>
+          <.link
+            href="/auth/signout"
+            method="post"
+            class="ml-auto text-sm text-gray-500 hover:text-gray-700 underline"
+          >
+            Sign out
+          </.link>
         </div>
 
         <p class="text-gray-500 mb-6">
