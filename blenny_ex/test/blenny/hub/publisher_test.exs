@@ -80,4 +80,75 @@ defmodule Blenny.PublisherTest do
     Blenny.Publisher.broadcast_data(%{"key" => "only data"})
     assert_receive {:blenny_msg, :ui, %{signals: _}}
   end
+
+  # ── Telemetry ───────────────────────────────────────────────────
+
+  defp telemetry_handler(event_name, measurements, metadata, config) do
+    send(config[:test_pid], {event_name, measurements, metadata})
+  end
+
+  defp attach_publisher_telemetry do
+    handler_id = "publisher-test-#{System.unique_integer([:positive])}"
+
+    :telemetry.attach(
+      handler_id,
+      [:blenny, :publisher, :broadcast],
+      &telemetry_handler/4,
+      %{test_pid: self()}
+    )
+
+    on_exit(fn ->
+      :telemetry.detach(handler_id)
+    end)
+  end
+
+  test "emits telemetry on broadcast_html with :ui intent" do
+    attach_publisher_telemetry()
+    Phoenix.PubSub.subscribe(@pubsub_name, "blenny:intent:ui")
+
+    Blenny.Publisher.broadcast_html("<div>hi</div>")
+
+    assert_receive {[:blenny, :publisher, :broadcast], %{count: 1},
+                    %{topic: "blenny:intent:ui", intent: :ui}}
+  end
+
+  test "emits telemetry on broadcast_data with :ui intent" do
+    attach_publisher_telemetry()
+    Phoenix.PubSub.subscribe(@pubsub_name, "blenny:intent:ui")
+
+    Blenny.Publisher.broadcast_data(%{"cpu" => 50})
+
+    assert_receive {[:blenny, :publisher, :broadcast], %{count: 1},
+                    %{topic: "blenny:intent:ui", intent: :ui}}
+  end
+
+  test "emits telemetry on execute_script with :command intent" do
+    attach_publisher_telemetry()
+    Phoenix.PubSub.subscribe(@pubsub_name, "blenny:intent:command")
+
+    Blenny.Publisher.execute_script("console.log('t')")
+
+    assert_receive {[:blenny, :publisher, :broadcast], %{count: 1},
+                    %{topic: "blenny:intent:command", intent: :command}}
+  end
+
+  test "emits telemetry on direct_html with :direct intent and user topic" do
+    attach_publisher_telemetry()
+    Phoenix.PubSub.subscribe(@pubsub_name, "blenny:user:test-user")
+
+    Blenny.Publisher.direct_html("<div>private</div>", "test-user")
+
+    assert_receive {[:blenny, :publisher, :broadcast], %{count: 1},
+                    %{topic: "blenny:user:test-user", intent: :direct}}
+  end
+
+  test "emits telemetry on direct_data with :direct intent and user topic" do
+    attach_publisher_telemetry()
+    Phoenix.PubSub.subscribe(@pubsub_name, "blenny:user:data-user")
+
+    Blenny.Publisher.direct_data(%{"score" => 99}, "data-user")
+
+    assert_receive {[:blenny, :publisher, :broadcast], %{count: 1},
+                    %{topic: "blenny:user:data-user", intent: :direct}}
+  end
 end

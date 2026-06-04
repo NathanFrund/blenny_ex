@@ -112,7 +112,7 @@ not re-implementing what Phoenix already provides.
 | `direct_html/2` | ✅ Done | — |
 | `direct_data/2` | ✅ Done | — |
 | Typed event system (beyond raw maps) | ❌ Missing | Define `Blenny.Event` struct with `:type`, `:payload`, `:metadata` for structured pub-sub |
-| Publisher telemetry (emit on each publish) | ❌ Missing | Hub and SSEPlug emit telemetry; Publisher does not |
+| Publisher telemetry (emit on each publish) | ✅ Done | Five events per broadcast (`count`, `topic`, `intent`) |
 
 ### D. Connection Management
 
@@ -146,7 +146,7 @@ not re-implementing what Phoenix already provides.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Telemetry events from Hub (register, unregister, rejected) | ✅ Done | `[:blenny, :hub, :connection, :register]`, `:unregister`, `:rejected` |
-| Telemetry events from Publisher (publish per intent) | ❌ Missing | Publisher does not emit telemetry |
+| Telemetry events from Publisher (publish per intent) | ✅ Done | Emits `[:blenny, :publisher, :broadcast]` with topic + intent |
 | Telemetry events from SSEPlug (connect, disconnect, bytes) | ✅ Done | Bytes telemetry on message dispatch |
 | Graceful shutdown (SIGTERM → drain connections → stop modules) | ✅ Done | Hub drain state machine with staggered reconnect; `drain_timeout` configurable |
 | Config validation with `nimble_options` | ✅ Done | Schema covers `:pub_sub`, `:hub`, `:transport`; validated in `Blenny.Config.validate!/0` at boot |
@@ -231,7 +231,7 @@ comprehensive testing.
 
 Exit criteria:
 - [ ] All M1 items complete
-- [ ] Telemetry from Publisher (emit per publish)
+- [x] Telemetry from Publisher (emit per publish)
 - [ ] Graceful shutdown tested (SIGTERM → SSE close frame → Hub cleanup → module stop)
 - [ ] Load test: 100 concurrent SSE connections with metrics
 - [ ] SSE reconnection backoff documented (or Datastar's built-in backoff deemed sufficient)
@@ -280,7 +280,7 @@ Exit criteria:
 | Intent types + routing | ✅ Done | — |
 | Intent filtering per transport | ✅ Done | — |
 | Publisher (5 functions) | ✅ Done | — |
-| Publisher telemetry | ❌ Missing | — |
+| Publisher telemetry | ✅ Done | — |
 | SSEPlug | ✅ Done | 28 unit tests |
 | LiveViewBridge | ✅ Done | — |
 | WebSocket transport | 🚫 Declined | See rationale in Transport Layer section |
@@ -292,7 +292,7 @@ Exit criteria:
 | Subscription wiring | ✅ Done | — |
 | `handle_info({:blenny_subscribe, ...})` injection | ✅ Done | — |
 | Config validation (`nimble_options`) | ✅ Done | — |
-| Telemetry (Hub + SSEPlug) | ✅ Done | Publisher still missing |
+| Telemetry (Hub + SSEPlug + Publisher) | ✅ Done | — |
 | Graceful shutdown | ✅ Done | — |
 | Rate limiting | ✅ Done | — |
 | Logger middleware | ✅ Done | — |
@@ -317,7 +317,7 @@ are partially implemented or not yet wired into the framework:
 | `routes/0` callback auto-mounting | Macro exists and works (`blenny_modules/2`), needs battle-testing and docs | Generally usable |
 | `max_connections` / `max_per_user` config defaults | Defaults exist, Hub enforces them | Working |
 | `initialize/1` state | Only gets `%{pub_sub: pub_sub}` | No access to Hub ref, config, or registry |
-| Publisher telemetry | Hub and SSEPlug emit telemetry; Publisher doesn't | No per-publish instrumentation |
+| Publisher telemetry | ✅ Done | Emits `[:blenny, :publisher, :broadcast]` with `topic` + `intent` |
 | `connected_users/0` API | Not exposed | Must query ETS manually |
 | Stale connection sweeper | ✅ Done | Periodic ETS sweep catches dead entries where DOWN was missed |
 | Connection metadata | Not extended | Only dedup key stored, no timestamps/activity |
@@ -376,7 +376,7 @@ These were previously listed as open questions.
 
 ### Beta (v0.5.0-beta)
 - [ ] All pre-release items complete
-- [ ] Telemetry: Publisher events (per publish)
+- [x] Telemetry: Publisher events (per publish)
 - [ ] Graceful shutdown tested
 - [ ] Load test: 100 concurrent SSE
 - [x] Stale connection sweeper

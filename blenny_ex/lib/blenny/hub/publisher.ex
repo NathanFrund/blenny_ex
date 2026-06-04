@@ -71,8 +71,15 @@ defmodule Blenny.Publisher do
     publish("blenny:intent:command", {:blenny_msg, :command, %{script: script}})
   end
 
-  defp publish(topic, msg) do
+  defp publish(topic, {:blenny_msg, intent, _payload} = msg) do
     Phoenix.PubSub.broadcast(Blenny.pub_sub(), topic, msg)
+
+    :telemetry.execute(
+      [:blenny, :publisher, :broadcast],
+      %{count: 1},
+      %{topic: topic, intent: intent}
+    )
+
     :ok
   end
 end
