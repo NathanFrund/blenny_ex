@@ -51,13 +51,13 @@ defmodule BlennyExampleApp.Blenny.FormAuth do
     {user_mod, user_pid, blob_pid} =
       case store_type do
         :memory ->
-          {:ok, u} = GenServer.start(Blenny.Storage.Impl.InMemory, [])
-          {:ok, b} = Blenny.Storage.Impl.FSBlob.start_link(base_dir: "./data/blobs")
+          {:ok, u} = DynamicSupervisor.start_child(Blenny.ModuleSupervisor, {Blenny.Storage.Impl.InMemory, []})
+          {:ok, b} = DynamicSupervisor.start_child(Blenny.ModuleSupervisor, {Blenny.Storage.Impl.FSBlob, base_dir: "./data/blobs"})
           {Blenny.Storage.Impl.InMemory, u, b}
 
         :dets ->
-          {:ok, u} = Blenny.Storage.Impl.DETS.start_link(data_dir: "./data/form_auth")
-          {:ok, b} = Blenny.Storage.Impl.FSBlob.start_link(base_dir: "./data/blobs")
+          {:ok, u} = DynamicSupervisor.start_child(Blenny.ModuleSupervisor, {Blenny.Storage.Impl.DETS, data_dir: "./data/form_auth"})
+          {:ok, b} = DynamicSupervisor.start_child(Blenny.ModuleSupervisor, {Blenny.Storage.Impl.FSBlob, base_dir: "./data/blobs"})
           {Blenny.Storage.Impl.DETS, u, b}
       end
 
