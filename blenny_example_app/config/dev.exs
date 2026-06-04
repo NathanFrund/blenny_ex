@@ -48,12 +48,12 @@ config :blenny_example_app, BlennyExampleAppWeb.Endpoint,
     web_console_logger: true,
     patterns: [
       # Static assets, except user uploads
-      ~r"priv/static/(?!uploads/).*\.(js|css|png|jpeg|jpg|gif|svg)$"E,
+      ~r"priv/static/(?!uploads/).*\.(js|css|png|jpeg|jpg|gif|svg)$",
       # Gettext translations
-      ~r"priv/gettext/.*\.po$"E,
+      ~r"priv/gettext/.*\.po$",
       # Router, Controllers, LiveViews and LiveComponents
-      ~r"lib/blenny_example_app_web/router\.ex$"E,
-      ~r"lib/blenny_example_app_web/(controllers|live|components)/.*\.(ex|heex)$"E
+      ~r"lib/blenny_example_app_web/router\.ex$",
+      ~r"lib/blenny_example_app_web/(controllers|live|components)/.*\.(ex|heex)$"
     ]
   ]
 
