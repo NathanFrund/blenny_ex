@@ -27,6 +27,7 @@ defmodule Blenny do
 
       config :blenny_ex, pub_sub: MyApp.PubSub
   """
+  @spec pub_sub() :: atom()
   def pub_sub do
     Application.get_env(:blenny_ex, :pub_sub) ||
       raise """

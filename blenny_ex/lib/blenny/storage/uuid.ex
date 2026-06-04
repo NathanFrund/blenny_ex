@@ -15,6 +15,7 @@ defmodule Blenny.Storage.UUID do
       iex> String.match?(uuid, ~r/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
       true
   """
+  @spec generate() :: String.t()
   def generate do
     <<u0::48, _v::4, u1::12, _r::2, u2::62>> = :crypto.strong_rand_bytes(16)
 

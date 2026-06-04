@@ -27,7 +27,20 @@ defmodule Blenny.Connection do
     inserted_at: 0
   ]
 
-  @doc false
+  @doc """
+  Creates a new `%Blenny.Connection{}` struct.
+
+  The `id` is a unique connection identifier, `conn_type` determines the
+  transport (`:liveview` or `:sse`), and `opts` may include `:user_id`,
+  `:transport_pid`, and `:intents`. Timestamp (`inserted_at`) is set
+  automatically to the current UTC time in milliseconds.
+
+  ## Examples
+
+      Blenny.Connection.new("conn-123", :sse)
+      Blenny.Connection.new("conn-456", :liveview, user_id: "user-1")
+  """
+  @spec new(String.t(), Blenny.Connection.conn_type(), Keyword.t()) :: Blenny.Connection.t()
   def new(id, conn_type, opts \\ []) do
     %__MODULE__{
       id: id,

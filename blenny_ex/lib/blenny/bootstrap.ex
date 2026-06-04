@@ -51,6 +51,7 @@ defmodule Blenny.Bootstrap do
   `init/1` validates configuration synchronously (fast), then sends a
   `:boot` message to perform module initialization asynchronously.
   """
+  @spec start_link(Keyword.t()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -62,6 +63,7 @@ defmodule Blenny.Bootstrap do
   Provided for backward compatibility with host apps that call
   `Blenny.Bootstrap.boot()` after `Supervisor.start_link`.
   """
+  @spec boot() :: :ok
   def boot do
     # Use GenServer.start (no link) so init failures don't crash the caller
     case GenServer.start(__MODULE__, [], name: __MODULE__) do

@@ -22,6 +22,7 @@ defmodule Blenny.Error do
       Blenny.Error.new(:too_many_connections, "connection limit reached", 503)
       Blenny.Error.new(:not_found, "module not found")
   """
+  @spec new(atom(), String.t(), non_neg_integer() | nil) :: t()
   def new(type, message, status \\ nil) do
     %__MODULE__{type: type, message: message, status: status}
   end

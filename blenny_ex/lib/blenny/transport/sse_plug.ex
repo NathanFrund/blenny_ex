@@ -16,6 +16,7 @@ defmodule Blenny.Transport.SSEPlug do
 
   def init(opts), do: opts
 
+  @spec call(Plug.Conn.t(), keyword()) :: Plug.Conn.t()
   def call(conn, _opts) do
     intents = Blenny.Intent.parse_list(conn.params["intent"])
 

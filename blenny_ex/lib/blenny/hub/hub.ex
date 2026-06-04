@@ -19,6 +19,7 @@ defmodule Blenny.Hub do
   @doc """
   Starts the Hub GenServer. Called during boot.
   """
+  @spec start_link(Keyword.t()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     name = opts[:name] || Blenny.Hub
     GenServer.start_link(__MODULE__, opts, name: name)
@@ -37,6 +38,7 @@ defmodule Blenny.Hub do
   Normally called automatically by OTP via `terminate/2` during
   application shutdown, but can also be called explicitly.
   """
+  @spec drain(GenServer.server(), timeout()) :: :drained | :already_draining
   def drain(hub \\ __MODULE__, timeout \\ 30_000) do
     GenServer.call(hub, {:drain, timeout})
   end
@@ -53,6 +55,8 @@ defmodule Blenny.Hub do
   the same user and type, the old connection receives a
   `{:blenny_replaced, new_pid}` message and the new one takes its place.
   """
+  @spec register_connection(GenServer.server(), Blenny.Connection.t()) ::
+          {:ok, Blenny.Connection.t()} | {:error, atom()}
   def register_connection(hub \\ __MODULE__, conn) when is_struct(conn, Blenny.Connection) do
     GenServer.call(hub, {:register_connection, conn})
   end
@@ -60,6 +64,7 @@ defmodule Blenny.Hub do
   @doc """
   Unregisters a connection by ID.
   """
+  @spec unregister_connection(GenServer.server(), String.t()) :: Blenny.Connection.t() | nil
   def unregister_connection(hub \\ __MODULE__, conn_id) when is_binary(conn_id) do
     GenServer.call(hub, {:unregister_connection, conn_id})
   end
@@ -67,6 +72,7 @@ defmodule Blenny.Hub do
   @doc """
   Looks up a connection by ID.
   """
+  @spec lookup_connection(GenServer.server(), String.t()) :: Blenny.Connection.t() | nil
   def lookup_connection(hub \\ __MODULE__, conn_id) when is_binary(conn_id) do
     GenServer.call(hub, {:lookup_connection, conn_id})
   end
@@ -74,6 +80,7 @@ defmodule Blenny.Hub do
   @doc """
   Returns all connections.
   """
+  @spec list_connections(GenServer.server()) :: [Blenny.Connection.t()]
   def list_connections(hub \\ __MODULE__) do
     GenServer.call(hub, :list_connections)
   end
@@ -81,6 +88,7 @@ defmodule Blenny.Hub do
   @doc """
   Returns connection count.
   """
+  @spec connection_count(GenServer.server()) :: non_neg_integer()
   def connection_count(hub \\ __MODULE__) do
     GenServer.call(hub, :connection_count)
   end
@@ -91,6 +99,7 @@ defmodule Blenny.Hub do
   Uses `user_id` if present, otherwise falls back to `conn.id` (each
   anonymous connection is its own dedup group).
   """
+  @spec dedup_key(map()) :: String.t()
   def dedup_key(%{user_id: user_id}) when is_binary(user_id), do: user_id
   def dedup_key(%{id: id}), do: id
 

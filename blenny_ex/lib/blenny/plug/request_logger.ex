@@ -33,6 +33,7 @@ defmodule Blenny.Plug.RequestLogger do
     }
   end
 
+  @spec call(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def call(conn, %{log_level: false}) do
     conn
   end

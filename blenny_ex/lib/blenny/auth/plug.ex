@@ -11,6 +11,7 @@ defmodule Blenny.Plug.FetchSession do
 
   def init(opts), do: opts
 
+  @spec call(Plug.Conn.t(), keyword()) :: Plug.Conn.t()
   def call(conn, _opts) do
     case Blenny.AuthRegistry.registered() do
       nil ->
@@ -42,6 +43,7 @@ defmodule Blenny.Plug.RequireUser do
 
   def init(opts), do: opts
 
+  @spec call(Plug.Conn.t(), keyword()) :: Plug.Conn.t()
   def call(conn, _opts) do
     case conn.assigns[:blenny_auth] do
       %Blenny.Auth{} ->
@@ -86,6 +88,7 @@ defmodule Blenny.Plug.RequireRole do
 
   def init(opts), do: List.wrap(opts)
 
+  @spec call(Plug.Conn.t(), keyword()) :: Plug.Conn.t()
   def call(conn, raw) do
     allowed = List.wrap(raw)
 
