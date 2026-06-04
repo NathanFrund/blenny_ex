@@ -87,7 +87,34 @@ end
 `FetchSession` delegates to the registered auth module (if any) to restore the
 current user from the session cookie.
 
-### Step 4: Import the router macro
+### Step 4: Add the request logger
+
+Add `Blenny.Plug.RequestLogger` to your browser pipeline, after `FetchSession`:
+
+```elixir
+pipeline :browser do
+  plug :accepts, ["html"]
+  plug :fetch_session
+  plug Blenny.Plug.FetchSession
+  plug Blenny.Plug.RequestLogger
+  plug :fetch_live_flash
+  plug :put_root_layout, html: {MyAppWeb.Layouts, :root}
+  plug :protect_from_forgery
+  plug :put_secure_browser_headers
+end
+```
+
+`RequestLogger` logs each completed request with method, path, status, and
+duration. Pass options as the second argument:
+
+```elixir
+plug Blenny.Plug.RequestLogger, log_level: :warning, exclude_paths: ["/health"]
+```
+
+Set `log_level: false` to disable, or `exclude_paths` to skip health checks
+and other noise routes.
+
+### Step 5: Import the router macro
 
 Still in `router.ex`, add the import:
 
@@ -95,7 +122,7 @@ Still in `router.ex`, add the import:
 import Blenny.Router
 ```
 
-### Step 5: Define your first module
+### Step 6: Define your first module
 
 Create `lib/my_app/blenny/dashboard_module.ex`:
 
@@ -136,7 +163,7 @@ returned by the `routes/0` callback. Supported formats:
 @blenny_routes {:live, "/admin", MyAppWeb.AdminLive, [auth: true]}
 ```
 
-### Step 6: Wire the routes
+### Step 7: Wire the routes
 
 Add a scope in `router.ex` that uses `blenny_modules/2`:
 
@@ -156,7 +183,7 @@ The first argument is a path prefix. The `:modules` list tells Blenny which
 modules to mount. Auth-protected routes are automatically wrapped with
 `RequireUser`.
 
-### Step 7: Add the SSE endpoint
+### Step 8: Add the SSE endpoint
 
 Outside the browser scope, add the SSE plug:
 
@@ -167,7 +194,7 @@ get "/sse", Blenny.Transport.SSEPlug, []
 This establishes long-lived SSE connections using the Datastar wire format.
 Clients connect with optional `?intent=ui,command&user_id=xxx` query params.
 
-### Step 8: Create a LiveView
+### Step 9: Create a LiveView
 
 Create `lib/my_app_web/dashboard_live.ex` that receives real-time updates from
 Blenny modules:
@@ -212,7 +239,7 @@ The `LiveViewBridge` `on_mount` hook registers the connection with the Hub,
 subscribes to PubSub topics, and tears down on unmount. Your `handle_info`
 clause receives `{:blenny_msg, intent, payload}` tuples.
 
-### Step 9: Publish data from a module
+### Step 10: Publish data from a module
 
 Make the dashboard module stateful so it emits metrics periodically:
 
