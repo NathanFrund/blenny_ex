@@ -51,8 +51,8 @@ def start(_type, _args) do
     {Phoenix.PubSub, name: MyApp.PubSub},
     {Registry, keys: :unique, name: Blenny.ModuleRegistry},
     {DynamicSupervisor, name: Blenny.ModuleSupervisor, strategy: :one_for_one},
-    {Blenny.Hub, [name: Blenny.Hub]},
-    MyAppWeb.Endpoint
+    MyAppWeb.Endpoint,
+    {Blenny.Hub, [name: Blenny.Hub, shutdown: 35_000]}
   ]
 
   opts = [strategy: :one_for_one, name: MyApp.Supervisor]
@@ -306,12 +306,63 @@ topics (`:ui` intents, per-user topics, etc.).
 # Required
 config :blenny_ex, pub_sub: MyApp.PubSub
 
-# Optional — connection limits
+# Optional — connection limits and shutdown
 config :blenny_ex, hub: [
   max_connections: 10_000,
-  max_per_user: 100
+  max_per_user: 100,
+  drain_timeout: 30_000
 ]
 ```
+
+## Graceful Shutdown
+
+Blenny coordinates a **two-phase drain** when the OTP application shuts down,
+preventing the thundering herd problem where thousands of clients reconnect
+simultaneously after a hard drop.
+
+### How it works
+
+1. **Hub stops first** — The Hub must appear **after** the Endpoint in your
+   supervision tree (see Step 2). OTP stops children in reverse start order,
+   so the Hub drains before the web server terminates.
+
+2. **`:draining` state** — The Hub transitions to `:draining`, rejecting new
+   registrations with `{:error, :draining}`.
+
+3. **Signal transports** — The Hub sends `{:blenny_drain, deadline}` to every
+   active transport PID:
+   - **SSE connections** receive a Datastar `execute_script` frame that
+     staggers reconnection: `setTimeout(() => location.reload(), random(1-6s))`
+   - **LiveView connections** receive the same signal — the LiveView process
+     stops, and Phoenix's built-in WebSocket exponential backoff handles
+     staggered reconnection automatically.
+
+4. **Wait for DOWN** — The Hub blocks in its `terminate/2` callback, waiting
+   for all transport processes to exit. Once all connections are cleaned up
+   (or `drain_timeout` expires), the Hub exits and the supervisor proceeds
+   with normal shutdown.
+
+### Configuring drain timeout
+
+```elixir
+config :blenny_ex, hub: [
+  drain_timeout: 30_000  # milliseconds (default)
+]
+```
+
+The Hub's `shutdown` in the supervision tree should be set to at least
+`drain_timeout + 5_000` to give `terminate/2` room to complete.
+
+### Explicit drain
+
+You can also drain programmatically:
+
+```elixir
+Blenny.Hub.drain()
+# => :drained (or :already_draining)
+```
+
+This is useful for blue-green deployments or custom shutdown sequences.
 
 ## Telemetry
 

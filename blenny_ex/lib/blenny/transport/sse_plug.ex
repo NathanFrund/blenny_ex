@@ -70,6 +70,10 @@ defmodule Blenny.Transport.SSEPlug do
           sse_loop(conn, conn_id, intents)
         end
 
+      {:blenny_drain, _deadline} ->
+        safe_execute_script(conn, ~s|setTimeout(() => location.reload(), Math.floor(Math.random() * 5000) + 1000)|)
+        cleanup(conn, conn_id)
+
       {:blenny_replaced, _new_pid} ->
         safe_execute_script(conn, ~s|console.log("Session replaced")|)
         cleanup(conn, conn_id)

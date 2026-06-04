@@ -30,6 +30,11 @@ defmodule Blenny.Transport.LiveViewBridge do
   defmacro __using__(opts) do
     quote do
       on_mount({Blenny.Transport.LiveViewBridge, unquote(opts)})
+
+      @impl true
+      def handle_info({:blenny_drain, _deadline}, socket) do
+        {:stop, :shutdown, socket}
+      end
     end
   end
 

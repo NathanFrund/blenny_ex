@@ -207,4 +207,88 @@ defmodule Blenny.HubTest do
 
     assert_receive {[:blenny, :hub, :connection, :unregister], %{count: _}, %{user_id: "eve", conn_type: :liveview, reason: :process_down}}
   end
+
+  # ── Graceful Drain ─────────────────────────────────────────────
+
+  test "drain returns drained with no connections" do
+    hub_name = :"drain_empty_#{System.unique_integer([:positive])}"
+    {:ok, pid} = Blenny.Hub.start_link(name: hub_name)
+    on_exit(fn -> Process.exit(pid, :kill) end)
+
+    assert Blenny.Hub.drain(hub_name) == :drained
+  end
+
+  test "drain rejects new registrations after draining" do
+    hub_name = :"drain_reject_#{System.unique_integer([:positive])}"
+    {:ok, pid} = Blenny.Hub.start_link(name: hub_name)
+    on_exit(fn -> Process.exit(pid, :kill) end)
+
+    # Register a transport that exits immediately on drain signal
+    transport_pid = spawn(fn ->
+      receive do
+        {:blenny_drain, _deadline} -> :ok
+      end
+    end)
+
+    conn = Blenny.Connection.new("drain-reject", :sse, transport_pid: transport_pid)
+    {:ok, _} = Blenny.Hub.register_connection(hub_name, conn)
+
+    assert Blenny.Hub.drain(hub_name) == :drained
+
+    conn2 = Blenny.Connection.new("drain-reject-2", :liveview, transport_pid: self())
+    assert {:error, :draining} = Blenny.Hub.register_connection(hub_name, conn2)
+  end
+
+  test "drain is idempotent" do
+    hub_name = :"drain_idem_#{System.unique_integer([:positive])}"
+    {:ok, pid} = Blenny.Hub.start_link(name: hub_name)
+    on_exit(fn -> Process.exit(pid, :kill) end)
+
+    assert Blenny.Hub.drain(hub_name) == :drained
+    assert Blenny.Hub.drain(hub_name) == :already_draining
+  end
+
+  test "drain signals transport and blocks until DOWN received" do
+    hub_name = :"drain_signal_#{System.unique_integer([:positive])}"
+    {:ok, pid} = Blenny.Hub.start_link(name: hub_name, drain_timeout: 5_000)
+    on_exit(fn -> Process.exit(pid, :kill) end)
+
+    test_pid = self()
+    transport_pid = spawn(fn ->
+      receive do
+        {:blenny_drain, _deadline} -> send(test_pid, :signaled)
+      end
+    end)
+
+    conn = Blenny.Connection.new("drain-signal", :sse, transport_pid: transport_pid)
+    {:ok, _} = Blenny.Hub.register_connection(hub_name, conn)
+
+    task = Task.async(fn -> Blenny.Hub.drain(hub_name) end)
+
+    assert_receive :signaled, 500
+
+    # Let transport exit so drain can complete
+    Process.exit(transport_pid, :kill)
+
+    assert Task.await(task, 2_000) == :drained
+  end
+
+  test "drain cleans up connection registry" do
+    hub_name = :"drain_clean_#{System.unique_integer([:positive])}"
+    {:ok, pid} = Blenny.Hub.start_link(name: hub_name, drain_timeout: 5_000)
+    on_exit(fn -> Process.exit(pid, :kill) end)
+
+    transport_pid = spawn(fn ->
+      receive do
+        {:blenny_drain, _deadline} -> :ok
+      end
+    end)
+
+    conn = Blenny.Connection.new("drain-clean", :sse, transport_pid: transport_pid)
+    {:ok, _} = Blenny.Hub.register_connection(hub_name, conn)
+
+    Blenny.Hub.drain(hub_name)
+
+    assert Blenny.Connection.Registry.lookup("drain-clean") == nil
+  end
 end

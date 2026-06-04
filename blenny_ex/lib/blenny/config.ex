@@ -21,7 +21,8 @@ defmodule Blenny.Config do
   @defaults [
     hub: [
       max_connections: 10_000,
-      max_per_user: 100
+      max_per_user: 100,
+      drain_timeout: 30_000
     ],
     transport: [
       idle_timeout_ms: 300_000,
@@ -53,9 +54,14 @@ defmodule Blenny.Config do
           type: :pos_integer,
           default: 100,
           doc: "Maximum connections per dedup key (user_id for auth, conn.id for anonymous)"
+        ],
+        drain_timeout: [
+          type: :pos_integer,
+          default: 30_000,
+          doc: "Time in milliseconds to wait for connections to drain during shutdown"
         ]
       ],
-      doc: "Hub connection limit settings"
+      doc: "Hub connection limit and shutdown settings"
     ],
     transport: [
       type: :keyword_list,

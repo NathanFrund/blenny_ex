@@ -364,7 +364,7 @@ blenny_test_app/
 | Config validation | Valibot | `nimble_options` validates at boot | ✅ |
 | Telemetry | ? | No events | ❌ |
 | Rate limiting | ✅ | Not implemented | ❌ |
-| Graceful shutdown | ✅ | Not implemented | ❌ |
+| Graceful shutdown | ✅ | `drain/1` + `terminate/2` + transport `:blenny_drain` signaling | ✅ |
 | CI pipeline | `deno task ci` | Not implemented | ❌ |
 | Generators | ❌ | `mix blenny.gen.module` | ❌ |
 | Hex publish | N/A (npm) | Not published | ❌ |

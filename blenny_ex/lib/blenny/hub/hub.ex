@@ -25,6 +25,23 @@ defmodule Blenny.Hub do
   end
 
   @doc """
+  Initiates graceful shutdown.
+
+  Transitions the Hub into `:draining` mode — new registrations are
+  rejected with `{:error, :draining}`, all transport processes receive
+  a `{:blenny_drain, deadline}` signal, and the call blocks until all
+  connections are cleaned up or the timeout expires.
+
+  Returns `:drained` on success or `:already_draining` if already draining.
+
+  Normally called automatically by OTP via `terminate/2` during
+  application shutdown, but can also be called explicitly.
+  """
+  def drain(hub \\ __MODULE__, timeout \\ 30_000) do
+    GenServer.call(hub, {:drain, timeout})
+  end
+
+  @doc """
   Registers a connection.
 
   Enforces connection limits before registering:
@@ -88,8 +105,15 @@ defmodule Blenny.Hub do
        monitors_by_ref: %{},
        monitors_by_conn: %{},
        max_connections: opts[:max_connections] || Blenny.Config.get([:hub, :max_connections]),
-       max_per_user: opts[:max_per_user] || Blenny.Config.get([:hub, :max_per_user])
+       max_per_user: opts[:max_per_user] || Blenny.Config.get([:hub, :max_per_user]),
+       drain_state: :accepting,
+       drain_timeout: opts[:drain_timeout] || Blenny.Config.get([:hub, :drain_timeout])
      }}
+  end
+
+  @impl true
+  def handle_call({:register_connection, _conn}, _from, %{drain_state: :draining} = state) do
+    {:reply, {:error, :draining}, state}
   end
 
   @impl true
@@ -176,6 +200,29 @@ defmodule Blenny.Hub do
   end
 
   @impl true
+  def handle_call({:drain, _timeout}, _from, %{drain_state: :draining} = state) do
+    {:reply, :already_draining, state}
+  end
+
+  @impl true
+  def handle_call({:drain, timeout}, _from, state) do
+    signal_transports(state.monitors_by_conn)
+    drained_state = drain_wait(state, timeout)
+    {:reply, :drained, drained_state}
+  end
+
+  @impl true
+  def terminate(_reason, %{drain_state: :draining} = state) do
+    drain_wait(state, state.drain_timeout)
+  end
+
+  @impl true
+  def terminate(_reason, state) do
+    signal_transports(state.monitors_by_conn)
+    drain_wait(state, state.drain_timeout)
+  end
+
+  @impl true
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
     case state.monitors_by_ref[ref] do
       nil ->
@@ -240,4 +287,51 @@ defmodule Blenny.Hub do
   end
 
   defp demonitor_if_pid(state, _pid), do: state
+
+  # ── Graceful Drain ─────────────────────────────────────────────
+
+  defp signal_transports(monitors_by_conn) do
+    deadline = System.monotonic_time(:millisecond) + 30_000
+
+    for {_conn_id, %{pid: pid}} <- monitors_by_conn do
+      send(pid, {:blenny_drain, deadline})
+    end
+  end
+
+  defp drain_wait(state, timeout) do
+    monitors = state.monitors_by_ref
+
+    if map_size(monitors) > 0 do
+      wait_for_down(monitors, timeout)
+    end
+
+    %{state | monitors_by_ref: %{}, monitors_by_conn: %{}, drain_state: :draining}
+  end
+
+  defp wait_for_down(monitors, timeout) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+
+    wait_for_down_loop(monitors, deadline)
+  end
+
+  defp wait_for_down_loop(monitors, deadline) do
+    remaining = deadline - System.monotonic_time(:millisecond)
+
+    if remaining > 0 and map_size(monitors) > 0 do
+      receive do
+        {:DOWN, ref, :process, _pid, _reason} ->
+          case monitors[ref] do
+            nil ->
+              wait_for_down_loop(monitors, deadline)
+
+            conn_id ->
+              Blenny.Connection.Registry.unregister(conn_id)
+              wait_for_down_loop(Map.delete(monitors, ref), deadline)
+          end
+      after
+        remaining ->
+          :ok
+      end
+    end
+  end
 end
