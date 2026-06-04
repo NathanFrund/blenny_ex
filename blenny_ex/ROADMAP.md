@@ -220,7 +220,7 @@ Exit criteria:
 - [ ] "Getting Started" guide in `README.md` covering: add dep, config PubSub, add ModuleRegistry/Supervisor to tree, define first module, boot
 - [ ] CI pipeline (GitHub Actions: test, format check, unused deps check)
 - [ ] `CHANGELOG.md` started
-- [ ] Auth integration recipes documented (Pow, AshAuthentication, pipe_through patterns)
+- [x] Auth integration recipes documented (Pow, AshAuthentication, pipe_through patterns)
 
 ### M2: Production-Ready (v0.5.0-beta)
 
@@ -368,10 +368,10 @@ These were previously listed as open questions.
 - [x] auth/0 callback
 - [x] Tests: SSEPlug unit tests (28)
 - [x] Tests: SSE dashboard integration test (Publisher API through full pipeline)
-- [ ] Docs: "Getting Started" guide
-- [ ] CI: GitHub Actions workflow
+- [x] Docs: "Getting Started" guide (10-step guide in README)
+- [x] CI: GitHub Actions workflow (test, format, unused deps on push/PR)
 - [ ] Changelog: v0.2.0-pre entry
-- [ ] Auth: integration recipes documented (Pow, AshAuthentication, pipe_through patterns)
+- [x] Auth: integration recipes documented (Pow, AshAuthentication, pipe_through patterns)
 - [ ] Publish to Hex as 0.2.0-pre
 
 ### Beta (v0.5.0-beta)

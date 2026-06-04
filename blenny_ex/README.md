@@ -457,6 +457,238 @@ live_dashboard "/dashboard",
 | `[:blenny, :hub, :connection, :unregister]` | `count` | `user_id`, `conn_type`, `reason` (`:explicit` \| `:process_down`) | Connection removed |
 | `[:blenny, :hub, :connection, :rejected]` | `count` | `user_id`, `conn_type`, `limit_type` (`:max_connections` \| `:max_per_user`) | Connection rejected by a limit |
 
+## Auth Integration
+
+Blenny's auth system is module-based. An auth provider is a Blenny module
+with `capabilities: ["auth"]`. The module owns its storage, UI, and
+cryptography. The framework provides the registry and enforcement plugs.
+
+### Architecture
+
+```
+                 ┌──────────────────┐
+                 │  AuthRegistry    │  singleton ETS registry
+                 │  (started first) │
+                 └────────┬─────────┘
+                          │ register(%{fetch_session: &verify_request/1})
+                          │
+              ┌───────────▼───────────┐
+              │   Auth Module         │  Blenny.Module + capabilities: ["auth"]
+              │   (FormAuth, etc.)    │
+              └───────────┬───────────┘
+                          │
+         ┌────────────────┼────────────────┐
+         │                │                │
+         ▼                ▼                ▼
+  ┌────────────┐  ┌──────────────┐  ┌────────────┐
+  │ FetchSession │  │ RequireUser  │  │ RequireRole │
+  │ (browser    │  │ (auth: true  │  │ (per-route) │
+  │  pipeline)  │  │  routes)     │  │            │
+  └────────────┘  └──────────────┘  └────────────┘
+```
+
+The auth module registers in `initialize/1` with `Blenny.AuthRegistry`,
+providing a `fetch_session` function reference. `FetchSession` runs in
+the browser pipeline and delegates to this function on every request.
+Routes tagged `auth: true` are automatically wrapped with `RequireUser`.
+
+The `auth/0` callback is optional and returns provider metadata:
+
+```elixir
+@impl true
+def auth do
+  [login_route: "/auth/signin"]
+end
+```
+
+#### Auth struct
+
+`Blenny.Auth` is set in `conn.assigns.blenny_auth` by `FetchSession`:
+
+```elixir
+%Blenny.Auth{
+  id: "user-abc123",
+  role: "admin",
+  metadata: %{}
+}
+```
+
+### Recipe: Custom Auth Module
+
+This is the generic pattern. The example app ships a full working
+implementation at `BlennyExampleApp.Blenny.FormAuth` — sign-in,
+registration, avatar upload, and session management via Phoenix cookies.
+
+```elixir
+defmodule MyApp.Blenny.MyAuth do
+  use Blenny.Module
+  import Plug.Conn
+
+  @impl true
+  def name, do: "my-auth"
+
+  @impl true
+  def capabilities, do: ["auth"]
+
+  @impl true
+  def auth do
+    [login_route: "/auth/signin"]
+  end
+
+  @blenny_routes {:http, :get, "/auth/signin", __MODULE__, :render_sign_in}
+  @blenny_routes {:http, :post, "/auth/signin", __MODULE__, :handle_sign_in}
+  @blenny_routes {:http, :post, "/auth/signout", __MODULE__, :handle_sign_out}
+
+  @impl true
+  def routes, do: @blenny_routes
+
+  @impl true
+  def initialize(_app_state) do
+    # Start your storage backend and register with AuthRegistry
+    Blenny.AuthRegistry.register(%{
+      module: __MODULE__,
+      fetch_session: &__MODULE__.verify_request/1,
+      login_route: "/auth/signin"
+    })
+
+    :ok
+  end
+
+  # Called by Blenny.Plug.FetchSession on every request
+  def verify_request(conn) do
+    case get_session(conn, "my_user_id") do
+      nil -> nil
+      id -> %Blenny.Auth{id: id, role: get_session(conn, "my_user_role")}
+    end
+  end
+
+  # ── Route handlers ──────────────────────────────────────────
+
+  def init(opts), do: opts
+
+  def call(conn, action) when is_atom(action) do
+    apply(__MODULE__, action, [conn, conn.params])
+  end
+
+  def render_sign_in(conn, _params) do
+    # Render sign-in form (HTML via ~s""" ... """)
+  end
+
+  def handle_sign_in(conn, %{"username" => user, "password" => pass}) do
+    # Validate credentials, set session, redirect
+  end
+
+  def handle_sign_out(conn, _params) do
+    configure_session(conn, drop: true) |> redirect(to: "/")
+  end
+end
+```
+
+**Storage backends** implement `Blenny.Storage.User` behaviour:
+
+| Backend | Persistence | Best for |
+|---------|-------------|----------|
+| `Blenny.Storage.Impl.InMemory` | None (ETS) | Dev/test |
+| `Blenny.Storage.Impl.DETS` | Durable (disk) | Single-node production |
+| `Blenny.Storage.Impl.FSBlob` | Filesystem | Avatars, media |
+| Custom | Your choice | SurrealDB, Postgres, etc. |
+
+The behaviour is straightforward:
+
+```elixir
+@callback create_user(pid, map()) :: {:ok, map()} | {:error, :already_exists}
+@callback find_by_id(pid, String.t()) :: map() | nil
+@callback find_by_username(pid, String.t()) :: map() | nil
+```
+
+To use a storage backend, start it in `initialize/1` under `Blenny.ModuleSupervisor`:
+
+```elixir
+{:ok, store_pid} = DynamicSupervisor.start_child(
+  Blenny.ModuleSupervisor,
+  {Blenny.Storage.Impl.DETS, [data_dir: "./data/my_auth"]}
+)
+```
+
+### Recipe: Pow Integration
+
+Pow stores its own session. The bridge is a thin `fetch_session`:
+
+```elixir
+def verify_request(conn) do
+  case Pow.Plug.current_user(conn) do
+    nil ->
+      nil
+
+    user ->
+      %Blenny.Auth{
+        id: user.id,
+        role: user.role || "user",
+        metadata: %{email: user.email}
+      }
+  end
+end
+```
+
+Register as usual in `initialize/1`:
+
+```elixir
+def initialize(_app_state) do
+  Blenny.AuthRegistry.register(%{
+    module: __MODULE__,
+    fetch_session: &__MODULE__.verify_request/1,
+    login_route: "/auth/signin"
+  })
+
+  :ok
+end
+```
+
+No storage backend needed — Pow manages its own database. The auth module
+is declarative (`child_spec` returns `:skip` by default).
+
+### Recipe: AshAuthentication Integration
+
+Same pattern — Ash manages its own session:
+
+```elixir
+def verify_request(conn) do
+  case AshAuthentication.Plug.current_user(conn) do
+    nil ->
+      nil
+
+    user ->
+      %Blenny.Auth{
+        id: user.id,
+        role: user.role || "user",
+        metadata: %{}
+      }
+  end
+end
+```
+
+Ash routes (sign-in, register, etc.) are handled by Ash directly. The
+Blenny auth module is purely a bridge — it provides `fetch_session` and
+registers the login route for `RequireUser` redirects.
+
+### Recipe: Custom Plug / pipe_through
+
+For apps that want their own auth system without writing a full Blenny
+auth module, you can use the enforcement plugs directly:
+
+```elixir
+pipeline :browser do
+  plug :accepts, ["html"]
+  plug :fetch_session
+  plug :my_custom_auth          # your own plug that sets blenny_auth
+  plug Blenny.Plug.RequireRole, :admin  # or omit entirely
+  plug Blenny.Plug.RequestLogger
+end
+```
+
+Set `conn.assigns.blenny_auth` to a `%Blenny.Auth{}` struct and the
+existing `RequireUser` / `RequireRole` plugs work without any registry.
+
 ## License
 
 MIT
