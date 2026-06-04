@@ -12,7 +12,7 @@ defmodule BlennyExampleApp.Blenny.DashboardModule do
 
   require Logger
 
-  @tick_ms 2_000
+  @tick_ms 1_000
 
   # ── Blenny.Module callbacks ───────────────────────────────────
 
