@@ -9,11 +9,11 @@ defmodule BlennyEx.MixProject do
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       description: "Multi-transport hypermedia engine for Phoenix — SSE (Datastar) and LiveView",
-      source_url: "https://github.com/anomalyco/blenny_ex",
+      source_url: "https://github.com/NathanFrund/blenny_ex",
       package: [
         licenses: ["MIT"],
-        links: %{"GitHub" => "https://github.com/anomalyco/blenny_ex"},
-        maintainers: []
+        links: %{"GitHub" => "https://github.com/NathanFrund/blenny_ex"},
+        maintainers: ["Nathan Frund"]
       ],
       deps: deps()
     ]

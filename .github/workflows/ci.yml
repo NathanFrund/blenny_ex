@@ -3,7 +3,7 @@ on: [push, pull_request]
 
 env:
   BLENNY_EX_DIR: blenny_ex
-  TEST_APP_DIR: blenny_test_app
+  EXAMPLE_APP_DIR: blenny_example_app
 
 jobs:
   test:
@@ -54,14 +54,14 @@ jobs:
         run: mix test
         working-directory: ${{ env.BLENNY_EX_DIR }}
 
-      - name: blenny_test_app — deps.get
+      - name: blenny_example_app — deps.get
         run: mix deps.get
-        working-directory: ${{ env.TEST_APP_DIR }}
+        working-directory: ${{ env.EXAMPLE_APP_DIR }}
 
-      - name: blenny_test_app — compile
+      - name: blenny_example_app — compile
         run: mix compile --warnings-as-errors
-        working-directory: ${{ env.TEST_APP_DIR }}
+        working-directory: ${{ env.EXAMPLE_APP_DIR }}
 
-      - name: blenny_test_app — test
+      - name: blenny_example_app — test
         run: mix test
-        working-directory: ${{ env.TEST_APP_DIR }}
+        working-directory: ${{ env.EXAMPLE_APP_DIR }}

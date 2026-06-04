@@ -218,7 +218,7 @@ global name collisions. Two files per store: `users.dets` (primary) +
 - **Compile:** `mix compile --warnings-as-errors`.
 - **Testing:** `mix test`.
 - **Precommit:** `mix precommit` — compiles both projects, formats, and runs
-  all tests (blenny_ex + blenny_test_app).
+  all tests (blenny_ex + blenny_example_app).
 - **Comments:** No comments in code. `@moduledoc` and `@doc` for API docs.
 - **Callbacks:** `@impl true` on every callback implementation.
 - **Types:** `@type` and `@spec` on all public functions. Use `@typedoc` for
@@ -296,10 +296,11 @@ blenny_ex/
       sse_test_helpers.ex          — TCP/HTTP helpers for Bandit
     blenny/                        — One test file per source module
 
-blenny_test_app/
-  lib/blenny_test_app/             — Host app consuming blenny_ex
-    blenny/dashboard_module.ex     — Metrics publisher GenServer
-  lib/blenny_test_app_web/
+blenny_example_app/
+
+  lib/blenny_example_app/             — Host app consuming blenny_ex
+
+  lib/blenny_example_app_web/
     dashboard_live.ex              — LiveView dashboard with event log
   test/                            — Integration tests (LiveView, SSE)
 ```

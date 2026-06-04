@@ -232,10 +232,11 @@ blenny_elixir/
 │   ├── mix.exs                 ← Hex metadata + dependencies
 │   └── ARCHITECTURE.md         ← This file
 │
-└── blenny_test_app/            ← Phoenix test application
-    ├── lib/blenny_test_app/
-    │   ├── blenny/             ← Test modules (DashboardModule, etc.)
-    │   └── blenny_test_app_web/← Web controllers, templates, LiveViews
+└── blenny_example_app/            ← Phoenix example application
+
+    ├── lib/blenny_example_app/
+
+    │   └── blenny_example_app_web/← Web controllers, templates, LiveViews
     ├── mix.exs                 ← Depends on blenny_ex via path:
     │                               {:blenny_ex, path: "../blenny_ex"}
     └── test/                   ← Integration tests
