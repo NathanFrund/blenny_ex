@@ -136,6 +136,17 @@ defmodule Blenny.Connection.Registry do
   end
 
   @doc """
+  Returns unique user IDs with active connections.
+  """
+  @spec connected_users() :: [String.t()]
+  def connected_users do
+    @user_index
+    |> :ets.match({:"$1", :_})
+    |> Enum.map(fn [user_id] -> user_id end)
+    |> Enum.uniq()
+  end
+
+  @doc """
   Returns the count of active connections.
   """
   @spec count() :: non_neg_integer()

@@ -114,4 +114,33 @@ defmodule Blenny.Connection.RegistryTest do
     assert Blenny.Connection.Registry.lookup_by_user("clean_user") == []
     assert Blenny.Connection.Registry.lookup_by_dedup_key("clean_user", :liveview) == nil
   end
+
+  test "connected_users returns unique user_ids" do
+    c1 = Blenny.Connection.new("cu-1", :sse, user_id: "alice")
+    c2 = Blenny.Connection.new("cu-2", :liveview, user_id: "alice")
+    c3 = Blenny.Connection.new("cu-3", :sse, user_id: "bob")
+    Blenny.Connection.Registry.register(c1)
+    Blenny.Connection.Registry.register(c2)
+    Blenny.Connection.Registry.register(c3)
+
+    users = Blenny.Connection.Registry.connected_users()
+    assert "alice" in users
+    assert "bob" in users
+    assert length(users) == 2
+  end
+
+  test "connected_users excludes anonymous connections" do
+    c1 = Blenny.Connection.new("anon-1", :sse)
+    Blenny.Connection.Registry.register(c1)
+
+    assert Blenny.Connection.Registry.connected_users() == []
+  end
+
+  test "connected_users is empty after all users unregistered" do
+    c1 = Blenny.Connection.new("cu-clean-1", :sse, user_id: "charlie")
+    Blenny.Connection.Registry.register(c1)
+    Blenny.Connection.Registry.unregister("cu-clean-1")
+
+    assert Blenny.Connection.Registry.connected_users() == []
+  end
 end

@@ -263,6 +263,27 @@ defmodule Blenny.HubTest do
                     %{user_id: "stale_user", conn_type: :sse, reason: :stale_sweep}}
   end
 
+  # ── Connected Users ────────────────────────────────────────────
+
+  test "connected_users returns authenticated users", %{hub: hub} do
+    c1 = Blenny.Connection.new("cu-hub-1", :sse, user_id: "alice", transport_pid: self())
+    c2 = Blenny.Connection.new("cu-hub-2", :liveview, user_id: "bob", transport_pid: self())
+    {:ok, _} = Blenny.Hub.register_connection(hub, c1)
+    {:ok, _} = Blenny.Hub.register_connection(hub, c2)
+
+    users = Blenny.Hub.connected_users(hub)
+    assert "alice" in users
+    assert "bob" in users
+    assert length(users) == 2
+  end
+
+  test "connected_users excludes anonymous users", %{hub: hub} do
+    c1 = Blenny.Connection.new("anon-hub", :sse, transport_pid: self())
+    {:ok, _} = Blenny.Hub.register_connection(hub, c1)
+
+    assert Blenny.Hub.connected_users(hub) == []
+  end
+
   # ── Graceful Drain ─────────────────────────────────────────────
 
   test "drain returns drained with no connections" do

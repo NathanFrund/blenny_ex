@@ -124,7 +124,7 @@ not re-implementing what Phoenix already provides.
 | Transport process monitoring (DOWN cleanup) | ✅ Done | — |
 | `max_connections` enforcement | ✅ Done | Checked in `Hub.register_connection/1` |
 | `max_per_user` enforcement | ✅ Done | Checked in `Hub.register_connection/1` |
-| `connected_users/0` listing | ❌ Missing | Could be derived from user index, no public API |
+| `connected_users/0` listing | ✅ Done | Returns unique user IDs with active connections |
 | Stale connection sweeper (periodic cleanup of dead but undelivered-DOWN entries) | ✅ Done | Timer-based ETS sweep for entries with no matching process |
 | Connection draining on deploy | ✅ Done | Hub drain state machine (`:accepting` → `:draining` → `:stopped`) |
 | Rate limiting per connection | ✅ Done | `Blenny.RateLimiter` process-local sliding window; enforced in SSEPlug |
@@ -241,7 +241,7 @@ Exit criteria:
 - [ ] Dialyzer passing with no unknown warnings
 - [ ] Credo passing with ≤ 10 warnings
 - [ ] Test coverage ≥ 80% (ExCoveralls)
-- [ ] `connected_users/0` API
+- [x] `connected_users/0` API
 - [ ] Connection metadata (connect time, last activity, bytes sent)
 - [ ] GitHub Actions passing on every push
 - [ ] Published to Hex as `0.5.0-beta`
@@ -318,7 +318,7 @@ are partially implemented or not yet wired into the framework:
 | `max_connections` / `max_per_user` config defaults | Defaults exist, Hub enforces them | Working |
 | `initialize/1` state | Only gets `%{pub_sub: pub_sub}` | No access to Hub ref, config, or registry |
 | Publisher telemetry | ✅ Done | Emits `[:blenny, :publisher, :broadcast]` with `topic` + `intent` |
-| `connected_users/0` API | Not exposed | Must query ETS manually |
+| `connected_users/0` API | ✅ Done | Exposed via Registry and Hub |
 | Stale connection sweeper | ✅ Done | Periodic ETS sweep catches dead entries where DOWN was missed |
 | Connection metadata | Not extended | Only dedup key stored, no timestamps/activity |
 | Typed event system | Not started | Raw maps only |
@@ -384,7 +384,7 @@ These were previously listed as open questions.
 - [x] Connection draining tested
 - [ ] Dialyzer + Credo clean
 - [ ] Coverage ≥ 80%
-- [ ] `connected_users/0` API
+- [x] `connected_users/0` API
 - [ ] Connection metadata (connect time, last activity, bytes)
 - [ ] Publish to Hex as 0.5.0-beta
 

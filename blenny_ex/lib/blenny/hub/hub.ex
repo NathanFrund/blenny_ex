@@ -94,6 +94,14 @@ defmodule Blenny.Hub do
   end
 
   @doc """
+  Returns unique user IDs with active connections.
+  """
+  @spec connected_users(GenServer.server()) :: [String.t()]
+  def connected_users(hub \\ __MODULE__) do
+    GenServer.call(hub, :connected_users)
+  end
+
+  @doc """
   Builds the dedup key for a connection.
 
   Uses `user_id` if present, otherwise falls back to `conn.id` (each
@@ -218,6 +226,11 @@ defmodule Blenny.Hub do
   @impl true
   def handle_call(:connection_count, _from, state) do
     {:reply, Blenny.Connection.Registry.count(), state}
+  end
+
+  @impl true
+  def handle_call(:connected_users, _from, state) do
+    {:reply, Blenny.Connection.Registry.connected_users(), state}
   end
 
   @impl true
