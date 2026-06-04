@@ -57,6 +57,7 @@ defmodule Blenny.Storage.Impl.InMemory do
   end
 
   @impl true
+  @spec create_user(pid(), map()) :: {:ok, Blenny.Storage.User.stored_user()} | {:error, :already_exists}
   def create_user(_pid, attrs) do
     username = attrs.username
 
