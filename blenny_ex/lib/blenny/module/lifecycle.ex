@@ -2,7 +2,8 @@ defmodule Blenny.Module.Lifecycle do
   require Logger
 
   @moduledoc """
-  Orchestrates the module lifecycle — initialize and supervised start.
+  Orchestrates the module lifecycle — initialize, supervised start,
+  and subscription wiring.
 
   Modules are processed in registration order. The DynamicSupervisor handles
   stop/shutdown naturally.
@@ -66,5 +67,40 @@ defmodule Blenny.Module.Lifecycle do
           end
       end
     end)
+  end
+
+  @doc """
+  Wires PubSub subscriptions for modules that define `subscriptions/0`.
+
+  For each module that exports `subscriptions/0` and returns a non-empty
+  list of topic strings, looks up the module's background process via
+  `Blenny.ModuleRegistry` and subscribes it to each topic.
+
+  Declarative modules (no background process, or subscriptions returning
+  `[]`) are silently skipped.
+  """
+  @spec wire_subscriptions([module()]) :: :ok
+  def wire_subscriptions(modules) do
+    Enum.each(modules, fn mod ->
+      if function_exported?(mod, :subscriptions, 0) do
+        topics = mod.subscriptions()
+
+        if topics != [] do
+          case Registry.lookup(Blenny.ModuleRegistry, {:module, mod}) do
+            [{pid, _}] ->
+              send(pid, {:blenny_subscribe, topics})
+
+              Logger.info(
+                "Sent subscribe signal to #{inspect(mod)} for #{length(topics)} topic(s)"
+              )
+
+            [] ->
+              :ok
+          end
+        end
+      end
+    end)
+
+    :ok
   end
 end

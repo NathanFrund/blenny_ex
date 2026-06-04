@@ -9,9 +9,6 @@ defmodule BlennyTest.ModuleDeclarative do
 
   @impl true
   def capabilities, do: []
-
-  @impl true
-  def subscriptions, do: []
 end
 
 defmodule BlennyTest.ModuleStateful do
@@ -26,9 +23,6 @@ defmodule BlennyTest.ModuleStateful do
 
   @impl true
   def capabilities, do: []
-
-  @impl true
-  def subscriptions, do: []
 
   @impl true
   def child_spec(_opts) do
@@ -61,9 +55,6 @@ defmodule BlennyTest.ModuleWithCapability do
 
   @impl true
   def capabilities, do: ["auth"]
-
-  @impl true
-  def subscriptions, do: []
 end
 
 defmodule BlennyTest.AuthTestModule do
@@ -84,9 +75,6 @@ defmodule BlennyTest.AuthTestModule do
       {:post, "/auth/avatar", :handle_avatar, [auth: true]}
     ]
   end
-
-  @impl true
-  def subscriptions, do: []
 
   @impl true
   def auth do
@@ -118,6 +106,42 @@ defmodule BlennyTest.AuthTestModule do
   end
 end
 
+defmodule BlennyTest.ModuleWithSubscriptions do
+  use Blenny.Module
+  use GenServer
+
+  @impl true
+  def name, do: "subscriptions"
+
+  @impl true
+  def routes, do: []
+
+  @impl true
+  def capabilities, do: []
+
+  @impl true
+  def subscriptions, do: ["test:topic"]
+
+  @impl true
+  def child_spec(_opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, []},
+      restart: :permanent,
+      type: :worker
+    }
+  end
+
+  def start_link(opts \\ []) do
+    GenServer.start_link(__MODULE__, opts,
+      name: {:via, Registry, {Blenny.ModuleRegistry, {:module, __MODULE__}}}
+    )
+  end
+
+  @impl true
+  def init(_opts), do: {:ok, %{}}
+end
+
 defmodule BlennyTest.RouterTestModule do
   use Blenny.Module
 
@@ -133,9 +157,6 @@ defmodule BlennyTest.RouterTestModule do
 
   @impl true
   def capabilities, do: []
-
-  @impl true
-  def subscriptions, do: []
 
   def init(_opts), do: {:ok, nil}
 end

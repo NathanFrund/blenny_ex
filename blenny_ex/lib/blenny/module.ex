@@ -80,11 +80,6 @@ defmodule Blenny.Module do
 
   @type method :: :get | :post | :put | :patch | :delete
 
-  @type subscription :: %{
-          required(:topic) => String.t(),
-          required(:handler) => function()
-        }
-
   @type state :: map()
 
   @doc """
@@ -166,11 +161,17 @@ defmodule Blenny.Module do
   @callback capabilities() :: [String.t()]
 
   @doc """
-  List of event subscriptions for the typed PubSub event bus.
+  List of PubSub topic strings this module subscribes to.
 
-  The handler receives the decoded payload map.
+  The module's background process (if stateful) will receive PubSub
+  messages as `{:blenny_msg, topic, payload}` tuples in its
+  `handle_info/2`. Topics can be any arbitrary string — not limited to
+  the `blenny:intent:*` namespace.
+
+  Only meaningful for stateful modules with a background process.
+  Declarative modules (no process) should omit this callback entirely.
   """
-  @callback subscriptions() :: [subscription()]
+  @callback subscriptions() :: [String.t()]
 
   @doc """
   Called during boot after all modules are discovered and before routes are registered.
@@ -198,7 +199,7 @@ defmodule Blenny.Module do
   """
   @callback auth() :: keyword()
 
-  @optional_callbacks initialize: 1, child_spec: 1, auth: 0
+  @optional_callbacks initialize: 1, child_spec: 1, subscriptions: 0, auth: 0
 
   defmacro __using__(_opts) do
     quote do
@@ -208,6 +209,13 @@ defmodule Blenny.Module do
 
       @doc false
       def child_spec(_opts), do: :skip
+
+      @doc false
+      def handle_info({:blenny_subscribe, topics}, state) do
+        pubsub = Blenny.pub_sub()
+        Enum.each(topics, &Phoenix.PubSub.subscribe(pubsub, &1, link: true))
+        {:noreply, state}
+      end
     end
   end
 

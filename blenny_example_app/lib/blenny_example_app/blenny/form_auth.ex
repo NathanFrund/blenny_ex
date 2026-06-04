@@ -37,9 +37,6 @@ defmodule BlennyExampleApp.Blenny.FormAuth do
   def routes, do: @blenny_routes
 
   @impl true
-  def subscriptions, do: []
-
-  @impl true
   def auth do
     [login_route: "/auth/signin"]
   end

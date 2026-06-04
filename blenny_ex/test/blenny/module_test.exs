@@ -16,6 +16,5 @@ defmodule Blenny.ModuleTest do
     assert BlennyTest.ModuleDeclarative.name() == "declarative"
     assert BlennyTest.ModuleDeclarative.routes() == []
     assert BlennyTest.ModuleDeclarative.capabilities() == []
-    assert BlennyTest.ModuleDeclarative.subscriptions() == []
   end
 end

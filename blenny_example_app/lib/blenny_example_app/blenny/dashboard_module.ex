@@ -30,9 +30,6 @@ defmodule BlennyExampleApp.Blenny.DashboardModule do
   def capabilities, do: []
 
   @impl true
-  def subscriptions, do: []
-
-  @impl true
   def child_spec(_opts) do
     %{
       id: __MODULE__,

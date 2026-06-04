@@ -3,17 +3,21 @@ defmodule Blenny.Bootstrap do
   Orchestrates the Blenny boot sequence.
 
   Can be started in the supervision tree or called via `boot/0` for backward
-  compatibility. The boot sequence is split into two phases:
+  compatibility. The boot sequence is split into three phases:
 
    1. **Synchronous (in `init/1`)** — config validation, registry checks,
       module discovery, capability validation, and module `initialize/1`
       callbacks. All fast, in-memory operations that must complete before
       the next child starts.
 
-  2. **Asynchronous (via `:start_supervised` message)** — starting background
-     processes (GenServers, metrics loops) under `ModuleSupervisor`. This
-     avoids blocking the supervisor during potentially slow `child_spec` /
-     `GenServer.init` operations.
+   2. **Asynchronous (via `:start_supervised` message)** — starting background
+      processes (GenServers, metrics loops) under `ModuleSupervisor`. This
+      avoids blocking the supervisor during potentially slow `child_spec` /
+      `GenServer.init` operations.
+
+   3. **Asynchronous (via `:wire_subscriptions` message)** — wiring PubSub
+      subscriptions for modules that define `subscriptions/0`. This runs
+      after module processes are started so they can subscribe directly.
 
   ## Supervision tree usage (recommended)
 
@@ -127,6 +131,13 @@ defmodule Blenny.Bootstrap do
   @impl true
   def handle_info(:start_supervised, %{modules: modules}) do
     Blenny.Module.Lifecycle.start_supervised(modules, Blenny.ModuleSupervisor)
+    send(self(), :wire_subscriptions)
+    {:noreply, %{modules: modules}}
+  end
+
+  @impl true
+  def handle_info(:wire_subscriptions, %{modules: modules}) do
+    Blenny.Module.Lifecycle.wire_subscriptions(modules)
     {:stop, :normal, :done}
   end
 
