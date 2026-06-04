@@ -232,12 +232,12 @@ comprehensive testing.
 Exit criteria:
 - [ ] All M1 items complete
 - [x] Telemetry from Publisher (emit per publish)
-- [ ] Graceful shutdown tested (SIGTERM → SSE close frame → Hub cleanup → module stop)
+- [x] Graceful shutdown tested (SIGTERM → SSE close frame → Hub cleanup → module stop)
 - [ ] Load test: 100 concurrent SSE connections with metrics
 - [ ] SSE reconnection backoff documented (or Datastar's built-in backoff deemed sufficient)
 - [x] Stale connection sweeper (periodic ETS cleanup)
 - [ ] Auth integration recipes complete, in HexDocs
-- [ ] Connection draining tested (deploy scenario)
+- [x] Connection draining tested (deploy scenario)
 - [ ] Dialyzer passing with no unknown warnings
 - [ ] Credo passing with ≤ 10 warnings
 - [ ] Test coverage ≥ 80% (ExCoveralls)
@@ -281,7 +281,7 @@ Exit criteria:
 | Intent filtering per transport | ✅ Done | — |
 | Publisher (5 functions) | ✅ Done | — |
 | Publisher telemetry | ✅ Done | — |
-| SSEPlug | ✅ Done | 28 unit tests |
+| SSEPlug | ✅ Done | 31 unit + integration tests |
 | LiveViewBridge | ✅ Done | — |
 | WebSocket transport | 🚫 Declined | See rationale in Transport Layer section |
 | Module behaviour | ✅ Done | — |
@@ -377,11 +377,11 @@ These were previously listed as open questions.
 ### Beta (v0.5.0-beta)
 - [ ] All pre-release items complete
 - [x] Telemetry: Publisher events (per publish)
-- [ ] Graceful shutdown tested
+- [x] Graceful shutdown tested
 - [ ] Load test: 100 concurrent SSE
 - [x] Stale connection sweeper
 - [ ] Auth: integration recipes complete, in docs
-- [ ] Connection draining tested
+- [x] Connection draining tested
 - [ ] Dialyzer + Credo clean
 - [ ] Coverage ≥ 80%
 - [ ] `connected_users/0` API

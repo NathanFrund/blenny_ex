@@ -566,6 +566,24 @@ defmodule Blenny.Transport.SSEPlugTest do
       assert length(signal_events) <= 2,
              "Expected at most 2 signal events (rate limited to 2), got #{length(signal_events)}"
     end
+
+    test "graceful drain sends reload script and cleans up connection", %{port: port} do
+      {socket, _headers} = connect_and_request(port)
+      :timer.sleep(100)
+
+      [conn] = Blenny.Hub.list_connections()
+      assert conn.transport_pid
+      assert Blenny.Hub.connection_count() == 1
+
+      deadline = System.monotonic_time(:millisecond) + 30_000
+      send(conn.transport_pid, {:blenny_drain, deadline})
+
+      raw = read_raw(socket, 2_000)
+      assert raw =~ "location.reload()"
+      assert raw =~ "datastar-patch-elements"
+
+      assert Blenny.Hub.connection_count() == 0
+    end
   end
 
   # ── Private helpers ───────────────────────────────────────────────
