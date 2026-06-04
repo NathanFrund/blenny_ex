@@ -6,6 +6,12 @@ Clojure → TypeScript → Elixir). Multi-transport hypermedia engine for SSE
 
 ---
 
+> **Status tracking, milestones, test counts, and gaps vs blenny-ts have moved
+> to [`ROADMAP.md`](./ROADMAP.md).** This file is an agent briefing only —
+> architecture, decisions, guardrails, and code idioms.
+
+---
+
 ## Key Idioms & Patterns
 
 ### Modules
@@ -238,35 +244,6 @@ global name collisions. Two files per store: `users.dets` (primary) +
 
 ---
 
-## Current State (June 2026)
-
-- Framework fully implemented: modules, PubSub-direct routing, SSE, LiveView,
-  publisher, config, auth plugs, router macro, storage layer.
-- 168 tests — all passing, zero warnings.
-- `mix format` clean. `mix compile --warnings-as-errors` clean.
-- Known gaps vs blenny-ts (see Gaps section below).
-
-Testing summary:
-
-| Area | Tests | Status |
-|---|---|---|
-| Auth (struct, registry, plugs, router) | 30 | ✅ |
-| Connection (struct, registry) | 18 | ✅ |
-| Intent | 12 | ✅ |
-| Config | 5 | ✅ |
-| Error | 2 | ✅ |
-| Hub | 9 | ✅ |
-| Publisher | 9 | ✅ |
-| Module (behaviour, loader, lifecycle) | 11 | ✅ |
-| Bootstrap | 3 | ✅ |
-| SSEPlug (unit + integration) | 27 | ✅ |
-| LiveView integration | 4 | ✅ |
-| Storage (UUID, InMemory, DETS, FSBlob) | 37 | ✅ |
-| FormAuth (test app — sign-in, register, sign-out, crypto) | 13 | ✅ |
-| SSE dashboard integration | 4 | 🟡 Medium |
-
----
-
 ## How to Navigate the Codebase
 
 ```
@@ -361,28 +338,5 @@ blenny_example_app/
 
 ---
 
-## Gaps vs blenny-ts
-
-| Feature | blenny-ts | blenny_ex | Status |
-|---|---|---|---|
-| SSE transport | Datastar SDK | `dstar` Hex package | ✅ |
-| WebSocket transport | Raw WS sidecar | 🚫 Declined (LiveView suffices) | Conscious decision |
-| Auth module | `form-auth.tsx` | `BlennyTestApp.Blenny.FormAuth` | ✅ |
-| Publisher API | 5 functions | 5 functions | ✅ |
-| Config validation | Valibot | `nimble_options` validates at boot | ✅ |
-| Telemetry | ? | No events | ❌ |
-| Rate limiting | ✅ | Not implemented | ❌ |
-| Graceful shutdown | ✅ | `drain/1` + `terminate/2` + transport `:blenny_drain` signaling | ✅ |
-| CI pipeline | `deno task ci` | Not implemented | ❌ |
-| Generators | ❌ | `mix blenny.gen.module` | ❌ |
-| Hex publish | N/A (npm) | Not published | ❌ |
-| Durable KV | Deno KV | DETS | ✅ |
-| Blob store | `FsBlobStore` | `Blenny.Storage.Impl.FSBlob` | ✅ |
-| Role-based access | `requireRole` | `RequireRole` plug | ✅ |
-| Connection recovery | Cookie + restore | 🚫 Declined (Datastar handles it) | Conscious decision |
-| Logger middleware | LogTape + requestLogger | Not implemented | ❌ |
-| Boot-time conflict detection | Capability check | ✅ | ✅ |
-
----
-
-_See `ROADMAP.md` for milestone tracking and release checklists._
+_See [`ROADMAP.md`](./ROADMAP.md) for status tracking, milestones, test counts,
+and gaps vs blenny-ts._

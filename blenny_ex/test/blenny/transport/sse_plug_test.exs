@@ -425,6 +425,47 @@ defmodule Blenny.Transport.SSEPlugTest do
              "expected at least 1 elements event from combined payload"
     end
 
+    test "receives signals from Blenny.Publisher.broadcast_data public API", %{
+      port: port
+    } do
+      {socket, _headers} = connect_and_request(port)
+
+      :timer.sleep(100)
+
+      Blenny.Publisher.broadcast_data(%{"cpu" => 42, "mem" => 128.5})
+
+      :timer.sleep(150)
+      raw = read_raw(socket)
+      events = extract_events(raw)
+
+      sig_event =
+        Enum.find(events, fn ev -> String.contains?(ev, "datastar-patch-signals") end)
+
+      assert sig_event, "expected a signals event from Publisher.broadcast_data"
+      assert sig_event =~ ~r/signals.*"cpu": ?42/
+      assert sig_event =~ ~r/signals.*"mem": ?128\.5/
+    end
+
+    test "receives elements from Blenny.Publisher.broadcast_html public API", %{
+      port: port
+    } do
+      {socket, _headers} = connect_and_request(port)
+
+      :timer.sleep(100)
+
+      Blenny.Publisher.broadcast_html(~s'<div id="status">Updated</div>')
+
+      :timer.sleep(150)
+      raw = read_raw(socket)
+      events = extract_events(raw)
+
+      elem_event =
+        Enum.find(events, fn ev -> String.contains?(ev, "datastar-patch-elements") end)
+
+      assert elem_event, "expected an elements event from Publisher.broadcast_html"
+      assert elem_event =~ "selector #status"
+    end
+
     test "intent filtering prevents delivery of non-matching intents", %{
       port: port,
       pubsub: pubsub
