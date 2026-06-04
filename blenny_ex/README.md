@@ -42,7 +42,8 @@ config :blenny_ex, pub_sub: MyApp.PubSub
 ### Step 2: Update the supervision tree
 
 Open `lib/my_app/application.ex`. Add `Blenny.ModuleRegistry`,
-`Blenny.ModuleSupervisor`, and `Blenny.Hub` before your Endpoint:
+`Blenny.ModuleSupervisor`, `Blenny.Bootstrap`, and `Blenny.Hub` before your
+Endpoint:
 
 ```elixir
 def start(_type, _args) do
@@ -51,21 +52,20 @@ def start(_type, _args) do
     {Phoenix.PubSub, name: MyApp.PubSub},
     {Registry, keys: :unique, name: Blenny.ModuleRegistry},
     {DynamicSupervisor, name: Blenny.ModuleSupervisor, strategy: :one_for_one},
-    MyAppWeb.Endpoint,
-    {Blenny.Hub, [name: Blenny.Hub, shutdown: 35_000]}
+    Blenny.Bootstrap,
+    {Blenny.Hub, [name: Blenny.Hub, shutdown: 35_000]},
+    MyAppWeb.Endpoint
   ]
 
   opts = [strategy: :one_for_one, name: MyApp.Supervisor]
-  {:ok, sup} = Supervisor.start_link(children, opts)
-
-  Blenny.Bootstrap.boot()
-
-  {:ok, sup}
+  {:ok, _sup} = Supervisor.start_link(children, opts)
 end
 ```
 
-The `boot/0` call discovers Blenny modules, validates them, runs their
-`initialize/1` callbacks, and starts any supervised child processes.
+`Blenny.Bootstrap` is a `:temporary` GenServer that validates configuration
+synchronously in `init/1` (fast-fail on misconfiguration), then discovers
+modules, runs their `initialize/1` callbacks, and starts any supervised
+child processes asynchronously. It stops itself after boot completes.
 
 ### Step 3: Add the session plug
 
@@ -161,6 +161,30 @@ returned by the `routes/0` callback. Supported formats:
 
 # LiveView route with auth protection
 @blenny_routes {:live, "/admin", MyAppWeb.AdminLive, [auth: true]}
+```
+
+### Route ordering
+
+Phoenix matches routes in declaration order — literal paths before wildcards.
+Within a Blenny module, routes maintain their declaration order (the
+`@before_compile` hook reverses Elixir's attribute accumulation internally).
+
+**Across modules**, the `modules:` list passed to `blenny_modules/2` controls
+precedence. Modules listed first have their routes matched first:
+
+```elixir
+# ─── BAD: wildcard before literal — /users/new always 404s ───
+#
+# ModuleA has:  @blenny_routes {:http, :get, "/users/:id", ...}
+# ModuleB has:  @blenny_routes {:http, :get, "/users/new", ...}
+#
+# blenny_modules("", modules: [ModuleA, ModuleB])
+# GET /users/new matches "/users/:id" first → 404
+
+# ─── GOOD: literal before wildcard — /users/new works ────
+#
+# blenny_modules("", modules: [ModuleB, ModuleA])
+# GET /users/new matches "/users/new" before "/users/:id" ✓
 ```
 
 ### Step 7: Wire the routes
@@ -271,7 +295,7 @@ defmodule MyApp.Blenny.DashboardModule do
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts,
-      name: {:via, Registry, {Blenny.ModuleRegistry, {:global, __MODULE__}}}
+      name: {:via, Registry, {Blenny.ModuleRegistry, {:module, __MODULE__}}}
     )
   end
 

@@ -151,8 +151,13 @@ global name collisions. Two files per store: `users.dets` (primary) +
 
 ### Module Lifecycles & Self-Assembly
 
-- **No Manual Boot Wiring:** `Bootstrap.boot/0` is the sole entry point. Never
-  add explicit module initialization outside it.
+- **Bootstrap is a temporary GenServer:** `Blenny.Bootstrap` runs in the
+  supervision tree as a `:temporary` child. Config validation and module
+  `initialize/1` callbacks run synchronously in `init/1`. Background
+  processes start asynchronously via `:start_supervised`. Bootstrap stops
+  itself after boot completes. `Blenny.AuthRegistry` must be in the
+  supervision tree before Bootstrap (it owns the ETS table for auth plugs).
+  Legacy `Blenny.Bootstrap.boot/0` is preserved for backward compatibility.
 - **Lifecycle Hooks:** Every module must respect `initialize/1` and `child_spec/1`.
 - **Blenny.Module usage:** Use `use Blenny.Module` — never manually implement
   the behaviour without `__using__`.
@@ -178,8 +183,10 @@ global name collisions. Two files per store: `users.dets` (primary) +
 
 - **Auth by Convention:** Auth is always a module claiming `capabilities: ["auth"]`.
   Framework must not hardcode auth logic.
+- **AuthRegistry is a persistent GenServer:** Runs in the supervision tree
+  before `Blenny.Bootstrap`. Owns the ETS table to keep it alive across the
+  application lifetime. `AuthRegistry.register/1` raises on duplicate.
 - **AuthRegistry is Singleton:** Exactly one module can claim `capabilities: ["auth"]`.
-  `AuthRegistry.register/1` raises on duplicate.
 - **Role Checks via Plugs:** `RequireUser` and `RequireRole` are the only
   auth enforcement points. Do not add role-checking to the router macro.
 - **fetch_session is a Function Reference:** The registered provider stores a

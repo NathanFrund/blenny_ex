@@ -2,9 +2,8 @@ defmodule Blenny.Storage.Impl.InMemory do
   @moduledoc """
   ETS-backed user store for development and testing.
 
-  Stores users in a named ETS table (`:blenny_storage_in_memory`) with a
-  secondary index (`:blenny_storage_in_memory_uname`) for O(1) username
-  lookups. Data is ephemeral — lost on process exit.
+  A GenServer that owns the named ETS tables. Created during the auth
+  module's `initialize/1` callback or added to a supervision tree.
 
   ## Usage
 
@@ -17,23 +16,27 @@ defmodule Blenny.Storage.Impl.InMemory do
       })
   """
 
+  use GenServer, restart: :temporary
+
   @behaviour Blenny.Storage.User
 
   @table :blenny_storage_in_memory
   @index :blenny_storage_in_memory_uname
 
   @impl true
-  def start_link(_opts) do
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, opts)
+  end
+
+  @impl GenServer
+  def init(_opts) do
     create_tables()
-    {:ok, self()}
+    {:ok, %{}}
   end
 
   @impl true
-  def stop(_pid) do
-    for name <- [@table, @index] do
-      if :ets.info(name) != :undefined, do: :ets.delete(name)
-    end
-
+  def stop(pid) do
+    if Process.alive?(pid), do: GenServer.stop(pid)
     :ok
   end
 

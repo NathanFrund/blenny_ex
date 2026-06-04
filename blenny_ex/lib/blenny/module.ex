@@ -55,7 +55,7 @@ defmodule Blenny.Module do
 
         def start_link(opts) do
           GenServer.start_link(__MODULE__, opts,
-            name: {:via, Registry, {Blenny.ModuleRegistry, {:global, __MODULE__}}}
+            name: {:via, Registry, {Blenny.ModuleRegistry, {:module, __MODULE__}}}
           )
         end
 
@@ -113,6 +113,30 @@ defmodule Blenny.Module do
 
   Routes tagged `auth: true` are automatically wrapped with
   `Blenny.Plug.RequireUser` when mounted via `blenny_modules/2`.
+
+  ### Route ordering
+
+  Phoenix matches routes in declaration order (Phoenix router). Within a
+  module, routes maintain their declaration order — the `@before_compile`
+  hook reverses Elixir's attribute accumulation internally. Across modules,
+  the `modules:` list in `blenny_modules/2` controls precedence: modules
+  listed first have their routes matched first.
+
+  If a wildcard route precedes a literal route, the literal route will
+  never match:
+
+      # Module A
+      @blenny_routes {:http, :get, "/users/:id", __MODULE__, :show}
+
+      # Module B
+      @blenny_routes {:http, :get, "/users/new", __MODULE__, :new}
+
+      # blenny_modules("", modules: [A, B])
+      # GET /users/new matches "/users/:id" → 404
+
+      # Fixed — literal before wildcard:
+      # blenny_modules("", modules: [B, A])
+      # GET /users/new matches "/users/new" ✓
   """
   @callback name() :: String.t()
 

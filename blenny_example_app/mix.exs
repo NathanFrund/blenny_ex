@@ -83,7 +83,13 @@ defmodule BlennyExampleApp.MixProject do
         "esbuild blenny_example_app --minify",
         "phx.digest"
       ],
-      precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
+      precommit: [
+        "clean",
+        "compile --warnings-as-errors",
+        "deps.unlock --unused",
+        "format",
+        "test"
+      ]
     ]
   end
 end

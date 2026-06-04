@@ -51,7 +51,7 @@ defmodule BlennyExampleApp.Blenny.FormAuth do
     {user_mod, user_pid, blob_pid} =
       case store_type do
         :memory ->
-          {:ok, u} = Blenny.Storage.Impl.InMemory.start_link([])
+          {:ok, u} = GenServer.start(Blenny.Storage.Impl.InMemory, [])
           {:ok, b} = Blenny.Storage.Impl.FSBlob.start_link(base_dir: "./data/blobs")
           {Blenny.Storage.Impl.InMemory, u, b}
 

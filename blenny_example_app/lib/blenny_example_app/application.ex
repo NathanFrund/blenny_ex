@@ -12,18 +12,16 @@ defmodule BlennyExampleApp.Application do
       {DNSCluster,
        query: Application.get_env(:blenny_example_app, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: BlennyExampleApp.PubSub},
+      Blenny.AuthRegistry,
       {Registry, keys: :unique, name: Blenny.ModuleRegistry},
       {DynamicSupervisor, name: Blenny.ModuleSupervisor, strategy: :one_for_one},
+      Blenny.Bootstrap,
       {Blenny.Hub, [name: Blenny.Hub, pub_sub: BlennyExampleApp.PubSub]},
       BlennyExampleAppWeb.Endpoint
     ]
 
     opts = [strategy: :one_for_one, name: BlennyExampleApp.Supervisor]
-    {:ok, sup} = Supervisor.start_link(children, opts)
-
-    Blenny.Bootstrap.boot()
-
-    {:ok, sup}
+    {:ok, _sup} = Supervisor.start_link(children, opts)
   end
 
   # Tell Phoenix to update the endpoint configuration

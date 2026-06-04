@@ -53,7 +53,7 @@ defmodule BlennyExampleApp.Blenny.DashboardModule do
   @doc false
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts,
-      name: {:via, Registry, {Blenny.ModuleRegistry, {:global, __MODULE__}}}
+      name: {:via, Registry, {Blenny.ModuleRegistry, {:module, __MODULE__}}}
     )
   end
 

@@ -7,6 +7,21 @@ defmodule Blenny.RateLimiter do
   rate limiting where the limiting process and the consuming process are
   one and the same.
 
+  ## Per-connection scope
+
+  Because counters live in the process dictionary, they die with the
+  process. An SSE connection that disconnects and reconnects immediately
+  gets a fresh window — the previous connection's counters are gone.
+  This is an intentional design choice: no shared state, no memory leaks,
+  and zero contention. For most use cases the client-side reconnect delay
+  (Datastar's staggered reload) provides sufficient spacing.
+
+  **If per-client enforcement across reconnects is needed in the future,**
+  the recommended approach is a short-lived ETS entry keyed on
+  `{user_id, remote_ip}` with a TTL equal to the window duration.
+  The entry inherits the old bucket across reconnects but expires
+  naturally — no permanent state leak.
+
   ## Usage
 
       case Blenny.RateLimiter.check(:my_key, 100, 1000) do
