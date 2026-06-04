@@ -109,6 +109,17 @@ defmodule Blenny.Hub do
   def init(opts) do
     Blenny.Connection.Registry.start_link()
 
+    stale_sweep_interval =
+      if Keyword.has_key?(opts, :stale_sweep_interval) do
+        opts[:stale_sweep_interval]
+      else
+        Blenny.Config.get([:hub, :stale_sweep_interval])
+      end
+
+    if stale_sweep_interval do
+      Process.send_after(self(), :sweep_stale_connections, stale_sweep_interval)
+    end
+
     {:ok,
      %{
        monitors_by_ref: %{},
@@ -116,7 +127,8 @@ defmodule Blenny.Hub do
        max_connections: opts[:max_connections] || Blenny.Config.get([:hub, :max_connections]),
        max_per_user: opts[:max_per_user] || Blenny.Config.get([:hub, :max_per_user]),
        drain_state: :accepting,
-       drain_timeout: opts[:drain_timeout] || Blenny.Config.get([:hub, :drain_timeout])
+       drain_timeout: opts[:drain_timeout] || Blenny.Config.get([:hub, :drain_timeout]),
+       stale_sweep_interval: stale_sweep_interval
      }}
   end
 
@@ -256,6 +268,31 @@ defmodule Blenny.Hub do
              monitors_by_conn: Map.delete(state.monitors_by_conn, conn_id)
          }}
     end
+  end
+
+  @impl true
+  def handle_info(:sweep_stale_connections, state) do
+    stale_conns =
+      Blenny.Connection.Registry.all()
+      |> Enum.filter(fn conn ->
+        conn.transport_pid && !Process.alive?(conn.transport_pid)
+      end)
+
+    for conn <- stale_conns do
+      Blenny.Connection.Registry.unregister(conn.id)
+
+      :telemetry.execute(
+        [:blenny, :hub, :connection, :unregister],
+        %{count: Blenny.Connection.Registry.count()},
+        %{user_id: conn.user_id, conn_type: conn.conn_type, reason: :stale_sweep}
+      )
+    end
+
+    if state.stale_sweep_interval do
+      Process.send_after(self(), :sweep_stale_connections, state.stale_sweep_interval)
+    end
+
+    {:noreply, state}
   end
 
   @impl true

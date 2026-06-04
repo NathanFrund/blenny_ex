@@ -214,6 +214,55 @@ defmodule Blenny.HubTest do
                     %{user_id: "eve", conn_type: :liveview, reason: :process_down}}
   end
 
+  # ── Stale Connection Sweeper ────────────────────────────────────
+
+  test "sweep_stale_connections removes stale (dead) connections", %{hub: hub} do
+    dead_pid = spawn(fn -> :ok end)
+    ref = Process.monitor(dead_pid)
+    assert_receive {:DOWN, ^ref, :process, ^dead_pid, _reason}
+
+    conn = Blenny.Connection.new("stale-1", :sse, transport_pid: dead_pid)
+    {:ok, _} = Blenny.Connection.Registry.register(conn)
+    assert Blenny.Connection.Registry.count() == 1
+
+    send(GenServer.whereis(hub), :sweep_stale_connections)
+    _ = Blenny.Hub.connection_count(hub)
+
+    assert Blenny.Connection.Registry.count() == 0
+    assert Blenny.Connection.Registry.lookup("stale-1") == nil
+  end
+
+  test "sweep_stale_connections leaves live connections intact", %{hub: hub} do
+    conn = Blenny.Connection.new("live-1", :liveview, transport_pid: self())
+    {:ok, _} = Blenny.Hub.register_connection(hub, conn)
+    assert Blenny.Hub.connection_count(hub) == 1
+
+    send(GenServer.whereis(hub), :sweep_stale_connections)
+    _ = Blenny.Hub.connection_count(hub)
+
+    assert Blenny.Hub.connection_count(hub) == 1
+    assert Blenny.Hub.lookup_connection(hub, "live-1") != nil
+  end
+
+  test "sweep_stale_connections emits unregister telemetry with reason stale_sweep", %{hub: hub} do
+    attach_telemetry_handler()
+
+    dead_pid = spawn(fn -> :ok end)
+    ref = Process.monitor(dead_pid)
+    assert_receive {:DOWN, ^ref, :process, ^dead_pid, _reason}
+
+    conn =
+      Blenny.Connection.new("t-stale-1", :sse, user_id: "stale_user", transport_pid: dead_pid)
+
+    {:ok, _} = Blenny.Connection.Registry.register(conn)
+
+    send(GenServer.whereis(hub), :sweep_stale_connections)
+    _ = Blenny.Hub.connection_count(hub)
+
+    assert_receive {[:blenny, :hub, :connection, :unregister], %{count: _},
+                    %{user_id: "stale_user", conn_type: :sse, reason: :stale_sweep}}
+  end
+
   # ── Graceful Drain ─────────────────────────────────────────────
 
   test "drain returns drained with no connections" do

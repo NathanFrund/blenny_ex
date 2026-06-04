@@ -125,7 +125,7 @@ not re-implementing what Phoenix already provides.
 | `max_connections` enforcement | ✅ Done | Checked in `Hub.register_connection/1` |
 | `max_per_user` enforcement | ✅ Done | Checked in `Hub.register_connection/1` |
 | `connected_users/0` listing | ❌ Missing | Could be derived from user index, no public API |
-| Stale connection sweeper (periodic cleanup of dead but undelivered-DOWN entries) | ❌ Missing | Timer-based ETS sweep for entries with no matching process |
+| Stale connection sweeper (periodic cleanup of dead but undelivered-DOWN entries) | ✅ Done | Timer-based ETS sweep for entries with no matching process |
 | Connection draining on deploy | ✅ Done | Hub drain state machine (`:accepting` → `:draining` → `:stopped`) |
 | Rate limiting per connection | ✅ Done | `Blenny.RateLimiter` process-local sliding window; enforced in SSEPlug |
 | Connection metadata (connect time, last activity, bytes sent) | ❌ Missing | Extend ETS entry with metadata map |
@@ -235,7 +235,7 @@ Exit criteria:
 - [ ] Graceful shutdown tested (SIGTERM → SSE close frame → Hub cleanup → module stop)
 - [ ] Load test: 100 concurrent SSE connections with metrics
 - [ ] SSE reconnection backoff documented (or Datastar's built-in backoff deemed sufficient)
-- [ ] Stale connection sweeper (periodic ETS cleanup)
+- [x] Stale connection sweeper (periodic ETS cleanup)
 - [ ] Auth integration recipes complete, in HexDocs
 - [ ] Connection draining tested (deploy scenario)
 - [ ] Dialyzer passing with no unknown warnings
@@ -275,7 +275,7 @@ Exit criteria:
 | Dedup enforcement | ✅ Done | — |
 | `max_connections` enforcement | ✅ Done | — |
 | `max_per_user` enforcement | ✅ Done | — |
-| Stale connection sweeper | ❌ Missing | — |
+| Stale connection sweeper | ✅ Done | — |
 | Connection draining | ✅ Done | — |
 | Intent types + routing | ✅ Done | — |
 | Intent filtering per transport | ✅ Done | — |
@@ -319,7 +319,7 @@ are partially implemented or not yet wired into the framework:
 | `initialize/1` state | Only gets `%{pub_sub: pub_sub}` | No access to Hub ref, config, or registry |
 | Publisher telemetry | Hub and SSEPlug emit telemetry; Publisher doesn't | No per-publish instrumentation |
 | `connected_users/0` API | Not exposed | Must query ETS manually |
-| Stale connection sweeper | Not implemented | Dead entries may linger if DOWN message is lost |
+| Stale connection sweeper | ✅ Done | Periodic ETS sweep catches dead entries where DOWN was missed |
 | Connection metadata | Not extended | Only dedup key stored, no timestamps/activity |
 | Typed event system | Not started | Raw maps only |
 
@@ -379,7 +379,7 @@ These were previously listed as open questions.
 - [ ] Telemetry: Publisher events (per publish)
 - [ ] Graceful shutdown tested
 - [ ] Load test: 100 concurrent SSE
-- [ ] Stale connection sweeper
+- [x] Stale connection sweeper
 - [ ] Auth: integration recipes complete, in docs
 - [ ] Connection draining tested
 - [ ] Dialyzer + Credo clean

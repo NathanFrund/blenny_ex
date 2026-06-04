@@ -149,8 +149,12 @@ defmodule Blenny.Connection.Registry do
   @spec clear() :: :ok
   def clear do
     for table <- [@table_name, @dedup_index, @user_index] do
-      if :ets.info(table) != :undefined do
-        :ets.delete_all_objects(table)
+      if :ets.whereis(table) != :undefined do
+        try do
+          :ets.delete_all_objects(table)
+        rescue
+          ArgumentError -> :ok
+        end
       end
     end
 

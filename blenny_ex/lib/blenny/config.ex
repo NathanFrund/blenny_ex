@@ -22,7 +22,8 @@ defmodule Blenny.Config do
     hub: [
       max_connections: 10_000,
       max_per_user: 100,
-      drain_timeout: 30_000
+      drain_timeout: 30_000,
+      stale_sweep_interval: 300_000
     ],
     transport: [
       idle_timeout_ms: 300_000,
@@ -59,9 +60,14 @@ defmodule Blenny.Config do
           type: :pos_integer,
           default: 30_000,
           doc: "Time in milliseconds to wait for connections to drain during shutdown"
+        ],
+        stale_sweep_interval: [
+          type: {:or, [:pos_integer, {:in, [nil]}]},
+          default: 300_000,
+          doc: "Interval in milliseconds for stale connection sweep (nil to disable)"
         ]
       ],
-      doc: "Hub connection limit and shutdown settings"
+      doc: "Hub connection limit, shutdown, and maintenance settings"
     ],
     transport: [
       type: :keyword_list,
