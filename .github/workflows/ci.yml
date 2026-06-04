@@ -1,0 +1,67 @@
+name: CI
+on: [push, pull_request]
+
+env:
+  BLENNY_EX_DIR: blenny_ex
+  TEST_APP_DIR: blenny_test_app
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - elixir: "1.17"
+            otp: "27"
+          - elixir: "1.18"
+            otp: "27"
+          - elixir: "1.19"
+            otp: "28"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
+
+      - name: Cache Hex
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mix
+          key: ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-
+
+      - name: blenny_ex — deps.get
+        run: mix deps.get
+        working-directory: ${{ env.BLENNY_EX_DIR }}
+
+      - name: blenny_ex — compile
+        run: mix compile --warnings-as-errors
+        working-directory: ${{ env.BLENNY_EX_DIR }}
+
+      - name: blenny_ex — format check
+        run: mix format --check-formatted
+        working-directory: ${{ env.BLENNY_EX_DIR }}
+
+      - name: blenny_ex — unused deps check
+        run: mix deps.unlock --check-unused
+        working-directory: ${{ env.BLENNY_EX_DIR }}
+
+      - name: blenny_ex — test
+        run: mix test
+        working-directory: ${{ env.BLENNY_EX_DIR }}
+
+      - name: blenny_test_app — deps.get
+        run: mix deps.get
+        working-directory: ${{ env.TEST_APP_DIR }}
+
+      - name: blenny_test_app — compile
+        run: mix compile --warnings-as-errors
+        working-directory: ${{ env.TEST_APP_DIR }}
+
+      - name: blenny_test_app — test
+        run: mix test
+        working-directory: ${{ env.TEST_APP_DIR }}
