@@ -3,33 +3,36 @@ defmodule BlennyExampleAppWeb.Router do
   import Blenny.Router
 
   pipeline :browser do
-    plug :accepts, ["html"]
-    plug :fetch_session
-    plug Blenny.Plug.FetchSession
-    plug :fetch_live_flash
-    plug :put_root_layout, html: {BlennyExampleAppWeb.Layouts, :root}
-    plug :protect_from_forgery
-    plug :put_secure_browser_headers
+    plug(:accepts, ["html"])
+    plug(:fetch_session)
+    plug(Blenny.Plug.FetchSession)
+    plug(:fetch_live_flash)
+    plug(:put_root_layout, html: {BlennyExampleAppWeb.Layouts, :root})
+    plug(:protect_from_forgery)
+    plug(:put_secure_browser_headers)
   end
 
   pipeline :api do
-    plug :accepts, ["json"]
+    plug(:accepts, ["json"])
   end
 
   scope "/", BlennyExampleAppWeb do
-    pipe_through :browser
+    pipe_through(:browser)
 
-    get "/", PageController, :home
+    get("/", PageController, :home)
   end
 
   scope "/" do
-    pipe_through :browser
+    pipe_through(:browser)
 
+    # Mount all Blenny module routes at "/". Modules are configured via
+    # `config :blenny_ex, :modules` or auto-discovered at compile time.
+    # The argument is a URL prefix — pass "/admin" to scope under /admin.
     blenny_modules("")
   end
 
   # SSE endpoint — no browser pipeline, fully-qualified module
-  get "/sse", Blenny.Transport.SSEPlug, []
+  get("/sse", Blenny.Transport.SSEPlug, [])
 
   # Other scopes may use custom stacks.
   # scope "/api", BlennyExampleAppWeb do
@@ -46,10 +49,10 @@ defmodule BlennyExampleAppWeb.Router do
     import Phoenix.LiveDashboard.Router
 
     scope "/dev" do
-      pipe_through :browser
+      pipe_through(:browser)
 
-      live_dashboard "/dashboard", metrics: BlennyExampleAppWeb.Telemetry
-      forward "/mailbox", Plug.Swoosh.MailboxPreview
+      live_dashboard("/dashboard", metrics: BlennyExampleAppWeb.Telemetry)
+      forward("/mailbox", Plug.Swoosh.MailboxPreview)
     end
   end
 end
