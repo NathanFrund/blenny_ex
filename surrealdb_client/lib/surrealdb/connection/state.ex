@@ -12,6 +12,7 @@ defmodule SurrealDB.Connection.State do
   defstruct pending: %{},
             lq_running: %{},
             lq_sql: MapSet.new(),
+            re_sub_pending: nil,
             auth_ready: false,
             config: %{}
 
@@ -19,6 +20,7 @@ defmodule SurrealDB.Connection.State do
           pending: map(),
           lq_running: map(),
           lq_sql: MapSet.t(),
+          re_sub_pending: list() | nil,
           auth_ready: boolean(),
           config: keyword()
         }

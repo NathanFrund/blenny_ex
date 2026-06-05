@@ -136,30 +136,13 @@ defmodule SurrealDB.Connection do
   end
 
   @doc """
-  Waits until the WebSocket connection is ready (handshake complete).
+  Waits until the WebSocket connection is ready and authenticated.
   Returns `:ok` or `{:error, :timeout}`.
   """
   @spec wait_for_ready(pid(), pos_integer()) :: :ok | {:error, :timeout}
   def wait_for_ready(pid, timeout \\ 5_000) do
     deadline = System.monotonic_time() + System.convert_time_unit(timeout, :millisecond, :native)
     wait_loop(pid, deadline)
-  end
-
-  @doc """
-  Authenticates a connection (signin + use). Must be called AFTER the
-  WebSocket handshake completes (`wait_for_ready/1` returns `:ok`).
-  """
-  @spec authenticate(pid()) :: :ok | {:error, term()}
-  def authenticate(pid) do
-    config = :sys.get_state(pid).config
-    auth_payload = %{user: config[:username], pass: config[:password]}
-    ns = config[:namespace]
-    db = config[:database]
-
-    with {:ok, _} <- signin(pid, auth_payload),
-         {:ok, _} <- use(pid, ns, db) do
-      :ok
-    end
   end
 
   # ----- WebSockex callbacks -----
@@ -171,6 +154,7 @@ defmodule SurrealDB.Connection do
       port: state.config[:port]
     })
 
+    send(self(), :perform_auth)
     {:ok, state}
   end
 
@@ -185,7 +169,11 @@ defmodule SurrealDB.Connection do
     Logger.debug("[SurrealDB] Disconnected (attempt #{attempt}), reconnect in #{sleep}ms")
 
     Process.sleep(sleep)
-    {:reconnect, State.set_auth_ready(state, false)}
+
+    {:reconnect,
+     state
+     |> State.set_auth_ready(false)
+     |> Map.put(:re_sub_pending, nil)}
   end
 
   @impl true
@@ -207,20 +195,68 @@ defmodule SurrealDB.Connection do
 
         case State.get_task(state, id) do
           nil ->
-            # No matching task — might be a live query notification
             notify_if_live_query(state, json)
+            {:ok, delete_if_task(state, id)}
 
-          task ->
+          {:reauth, :signin, ns, db} ->
+            handle_reauth_signin(state, json, id, ns, db)
+
+          {:reauth, :use} ->
+            handle_reauth_use(state, json, id)
+
+          {:resubscribe, sql, callback} ->
+            handle_resubscribe(state, json, id, sql, callback)
+
+          task when is_map(task) ->
             if Process.alive?(task.pid) do
               Process.send(task.pid, {:query_result, json, id}, [])
             end
-        end
 
-        {:ok, delete_if_task(state, id)}
+            {:ok, delete_if_task(state, id)}
+        end
 
       {:error, reason} ->
         Logger.warning("[SurrealDB] Invalid JSON: #{inspect(reason)}")
         {:ok, state}
+    end
+  end
+
+  @impl true
+  def handle_info(:perform_auth, state) do
+    config = state.config
+    auth_payload = %{user: config[:username], pass: config[:password]}
+    ns = config[:namespace]
+    db = config[:database]
+
+    id = Protocol.request_id()
+    {_pid, payload} = Protocol.build_payload("signin", [payload: auth_payload], id)
+    {:reply, {:text, payload}, State.register_task(state, id, {:reauth, :signin, ns, db})}
+  end
+
+  @impl true
+  def handle_info({:retry_resubscribe, sql, callback}, state) do
+    id = Protocol.request_id()
+    {_pid, payload} = Protocol.build_payload("query", [sql: sql, vars: %{}], id)
+    {:reply, {:text, payload}, State.register_task(state, id, {:resubscribe, sql, callback})}
+  end
+
+  @impl true
+  def handle_info(:re_subscribe_next, state) do
+    case state.re_sub_pending do
+      nil ->
+        {:ok, state}
+
+      [] ->
+        {:ok, %{state | re_sub_pending: nil}}
+
+      [{sql, callback} | rest] ->
+        id = Protocol.request_id()
+        {_pid, payload} = Protocol.build_payload("query", [sql: sql, vars: %{}], id)
+
+        state =
+          State.register_task(%{state | re_sub_pending: rest}, id, {:resubscribe, sql, callback})
+
+        {:reply, {:text, payload}, state}
     end
   end
 
@@ -314,16 +350,82 @@ defmodule SurrealDB.Connection do
     end
   end
 
+  defp handle_reauth_signin(state, json, id, ns, db) do
+    if Map.has_key?(json, "error") do
+      Logger.warning("[SurrealDB] Re-auth signin failed: #{inspect(json["error"])}")
+      {:ok, delete_if_task(state, id)}
+    else
+      use_id = Protocol.request_id()
+      {_pid, payload} = Protocol.build_payload("use", [ns: ns, db: db], use_id)
+      state = State.register_task(delete_if_task(state, id), use_id, {:reauth, :use})
+      {:reply, {:text, payload}, state}
+    end
+  end
+
+  defp handle_reauth_use(state, json, id) do
+    if Map.has_key?(json, "error") do
+      Logger.warning("[SurrealDB] Re-auth use failed: #{inspect(json["error"])}")
+      {:ok, delete_if_task(state, id)}
+    else
+      Logger.debug("[SurrealDB] Re-authentication successful")
+      pending = Enum.to_list(state.lq_sql)
+
+      state =
+        state
+        |> State.set_auth_ready(true)
+        |> State.reset_live_queries()
+        |> delete_if_task(id)
+
+      if pending == [] do
+        {:ok, state}
+      else
+        send(self(), :re_subscribe_next)
+        {:ok, %{state | re_sub_pending: pending}}
+      end
+    end
+  end
+
+  defp handle_resubscribe(state, json, id, sql, callback) do
+    state = delete_if_task(state, id)
+
+    case json["result"] do
+      [%{"status" => "OK", "result" => [lq_id]}] ->
+        Logger.debug("[SurrealDB] Re-subscribed live query: #{sql}")
+        state = State.register_live_query(state, sql, lq_id, callback)
+
+        case state.re_sub_pending do
+          [] ->
+            {:ok, %{state | re_sub_pending: nil}}
+
+          _ ->
+            send(self(), :re_subscribe_next)
+            {:ok, state}
+        end
+
+      _ ->
+        Logger.warning("[SurrealDB] Failed to re-subscribe live query: #{sql}")
+
+        Process.send_after(self(), {:retry_resubscribe, sql, callback}, 2_000)
+
+        case state.re_sub_pending do
+          [] ->
+            {:ok, %{state | re_sub_pending: nil}}
+
+          _ ->
+            send(self(), :re_subscribe_next)
+            {:ok, state}
+        end
+    end
+  end
+
   defp wait_loop(pid, deadline) do
     if System.monotonic_time() >= deadline, do: {:error, :timeout}
 
-    case ping(pid) do
-      {:ok, _} ->
-        :ok
-
-      _ ->
-        Process.sleep(100)
-        wait_loop(pid, deadline)
+    if :sys.get_state(pid).auth_ready do
+      :ok
+    else
+      Process.sleep(100)
+      wait_loop(pid, deadline)
     end
   end
 end

@@ -30,28 +30,24 @@ defmodule BlennyExampleApp.Blenny.FormAuthSurreal do
 
   @impl true
   def initialize(_app_state) do
-    surreal_opts = Application.get_env(:blenny_example_app, :surrealdb, [])
+    surreal_opts =
+      :blenny_example_app
+      |> Application.get_env(:surrealdb, [])
+      |> Keyword.put(:name, SurrealDB.Connection)
 
     conn =
       case DynamicSupervisor.start_child(
              Blenny.ModuleSupervisor,
              {SurrealDB, surreal_opts}
            ) do
-        {:ok, pid} ->
-          case SurrealDB.Connection.wait_for_ready(pid) do
+        {:ok, _pid} ->
+          case SurrealDB.Connection.wait_for_ready(SurrealDB.Connection) do
             :ok ->
-              case SurrealDB.Connection.authenticate(pid) do
-                :ok ->
-                  pid
-
-                {:error, reason} ->
-                  Logger.warning("[FormAuthSurreal] Auth failed: #{inspect(reason)}")
-                  pid
-              end
+              SurrealDB.Connection
 
             {:error, :timeout} ->
               Logger.warning("[FormAuthSurreal] Connection timeout")
-              pid
+              SurrealDB.Connection
           end
 
         {:error, reason} ->
@@ -64,6 +60,8 @@ defmodule BlennyExampleApp.Blenny.FormAuthSurreal do
         Blenny.ModuleSupervisor,
         {Blenny.Storage.Impl.FSBlob, base_dir: "./data/blobs"}
       )
+
+    if conn, do: init_schema(conn)
 
     bridge =
       if conn do
@@ -80,8 +78,6 @@ defmodule BlennyExampleApp.Blenny.FormAuthSurreal do
             nil
         end
       end
-
-    if conn, do: init_schema(conn)
 
     :persistent_term.put(@store_key, {conn, b, bridge})
 
@@ -262,6 +258,56 @@ defmodule BlennyExampleApp.Blenny.FormAuthSurreal do
                   |> put_session("blenny_user_display_name", display_name)
                   |> configure_session(renew: true)
                   |> redirect(to: "/dashboard")
+
+                {:error, reason} ->
+                  html(conn, ui_register("Registration failed: #{inspect(reason)}", token))
+              end
+
+            {:error, reason} ->
+              Logger.warning(
+                "[FormAuthSurreal] Schema error, re-initializing: #{inspect(reason)}"
+              )
+
+              init_schema(conn_pid)
+
+              case query_one(conn_pid, "SELECT * FROM user WHERE username = $username", %{
+                     "username" => username
+                   }) do
+                {:ok, _existing} ->
+                  html(conn, ui_register("Username already taken", token))
+
+                {:error, :not_found} ->
+                  uuid = Blenny.Storage.UUID.generate()
+
+                  case SurrealDB.query(
+                         conn_pid,
+                         """
+                           CREATE user CONTENT {
+                             uuid: $uuid,
+                             username: $username,
+                             password: crypto::argon2::generate($password),
+                             display_name: $display_name,
+                             role: 'user'
+                           }
+                         """,
+                         %{
+                           "uuid" => uuid,
+                           "username" => username,
+                           "password" => password,
+                           "display_name" => display_name
+                         }
+                       ) do
+                    {:ok, _json} ->
+                      conn
+                      |> put_session("blenny_user_id", uuid)
+                      |> put_session("blenny_user_role", "user")
+                      |> put_session("blenny_user_display_name", display_name)
+                      |> configure_session(renew: true)
+                      |> redirect(to: "/dashboard")
+
+                    {:error, reason} ->
+                      html(conn, ui_register("Registration failed: #{inspect(reason)}", token))
+                  end
 
                 {:error, reason} ->
                   html(conn, ui_register("Registration failed: #{inspect(reason)}", token))

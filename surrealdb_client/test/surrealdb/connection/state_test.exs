@@ -9,6 +9,7 @@ defmodule SurrealDB.Connection.StateTest do
       assert state.pending == %{}
       assert state.lq_running == %{}
       assert state.lq_sql == MapSet.new()
+      assert state.re_sub_pending == nil
       assert state.auth_ready == false
       assert state.config[:hostname] == "localhost"
     end
