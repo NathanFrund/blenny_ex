@@ -1,0 +1,11 @@
+# Editor/OS
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Build
+_build/
+deps/

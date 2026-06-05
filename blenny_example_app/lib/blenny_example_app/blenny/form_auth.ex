@@ -76,6 +76,29 @@ defmodule BlennyExampleApp.Blenny.FormAuth do
             )
 
           {Blenny.Storage.Impl.DETS, u, b}
+
+        :surreal_db ->
+          surreal_opts = Application.get_env(:blenny_ex, :surrealdb, [])
+
+          {:ok, conn} =
+            DynamicSupervisor.start_child(
+              Blenny.ModuleSupervisor,
+              {SurrealDB, surreal_opts}
+            )
+
+          {:ok, u} =
+            DynamicSupervisor.start_child(
+              Blenny.ModuleSupervisor,
+              {Blenny.Storage.Impl.SurrealDB, connection: conn}
+            )
+
+          {:ok, b} =
+            DynamicSupervisor.start_child(
+              Blenny.ModuleSupervisor,
+              {Blenny.Storage.Impl.FSBlob, base_dir: "./data/blobs"}
+            )
+
+          {Blenny.Storage.Impl.SurrealDB, u, b}
       end
 
     :persistent_term.put(@store_key, {user_mod, user_pid, blob_pid})

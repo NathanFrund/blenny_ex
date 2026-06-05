@@ -34,6 +34,7 @@ defmodule BlennyEx.MixProject do
       {:telemetry, "~> 1.0"},
       {:nimble_options, "~> 1.0"},
       {:dstar, "~> 0.0.10"},
+      {:surrealdb, "~> 0.1", path: "../surrealdb_client"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
