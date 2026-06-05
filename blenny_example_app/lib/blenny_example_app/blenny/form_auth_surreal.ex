@@ -63,23 +63,7 @@ defmodule BlennyExampleApp.Blenny.FormAuthSurreal do
 
     if conn, do: init_schema(conn)
 
-    bridge =
-      if conn do
-        case DynamicSupervisor.start_child(
-               Blenny.ModuleSupervisor,
-               {Blenny.SurrealDB.PublisherBridge,
-                connection: conn, subscriptions: [%{table: "user", intent: :ui}]}
-             ) do
-          {:ok, pid} ->
-            pid
-
-          {:error, reason} ->
-            Logger.warning("[FormAuthSurreal] PublisherBridge failed: #{inspect(reason)}")
-            nil
-        end
-      end
-
-    :persistent_term.put(@store_key, {conn, b, bridge})
+    :persistent_term.put(@store_key, {conn, b})
 
     Blenny.AuthRegistry.register(%{
       module: __MODULE__,
@@ -165,7 +149,7 @@ defmodule BlennyExampleApp.Blenny.FormAuthSurreal do
   end
 
   def handle_sign_in(conn, %{"username" => username, "password" => password}) do
-    {conn_pid, _blob, _bridge} = :persistent_term.get(@store_key)
+    {conn_pid, _blob} = :persistent_term.get(@store_key)
 
     token = Plug.CSRFProtection.get_csrf_token()
 
@@ -208,7 +192,7 @@ defmodule BlennyExampleApp.Blenny.FormAuthSurreal do
     display_name = Map.get(params, "display_name", "")
     token = Plug.CSRFProtection.get_csrf_token()
 
-    {conn_pid, _blob, _bridge} = :persistent_term.get(@store_key)
+    {conn_pid, _blob} = :persistent_term.get(@store_key)
 
     if conn_pid == nil do
       html(conn, ui_register("Database unavailable", token))
@@ -224,94 +208,17 @@ defmodule BlennyExampleApp.Blenny.FormAuthSurreal do
           html(conn, ui_register("Display name is required", token))
 
         true ->
-          case query_one(conn_pid, "SELECT * FROM user WHERE username = $username", %{
-                 "username" => username
-               }) do
-            {:ok, _existing} ->
-              html(conn, ui_register("Username already taken", token))
-
-            {:error, :not_found} ->
-              uuid = Blenny.Storage.UUID.generate()
-
-              case SurrealDB.query(
-                     conn_pid,
-                     """
-                       CREATE user CONTENT {
-                         uuid: $uuid,
-                         username: $username,
-                         password: crypto::argon2::generate($password),
-                         display_name: $display_name,
-                         role: 'user'
-                       }
-                     """,
-                     %{
-                       "uuid" => uuid,
-                       "username" => username,
-                       "password" => password,
-                       "display_name" => display_name
-                     }
-                   ) do
-                {:ok, _json} ->
-                  conn
-                  |> put_session("blenny_user_id", uuid)
-                  |> put_session("blenny_user_role", "user")
-                  |> put_session("blenny_user_display_name", display_name)
-                  |> configure_session(renew: true)
-                  |> redirect(to: "/dashboard")
-
-                {:error, reason} ->
-                  html(conn, ui_register("Registration failed: #{inspect(reason)}", token))
-              end
-
-            {:error, reason} ->
+          case do_register(conn, conn_pid, username, password, display_name, token) do
+            {:retry, reason} ->
               Logger.warning(
                 "[FormAuthSurreal] Schema error, re-initializing: #{inspect(reason)}"
               )
 
               init_schema(conn_pid)
+              do_register(conn, conn_pid, username, password, display_name, token)
 
-              case query_one(conn_pid, "SELECT * FROM user WHERE username = $username", %{
-                     "username" => username
-                   }) do
-                {:ok, _existing} ->
-                  html(conn, ui_register("Username already taken", token))
-
-                {:error, :not_found} ->
-                  uuid = Blenny.Storage.UUID.generate()
-
-                  case SurrealDB.query(
-                         conn_pid,
-                         """
-                           CREATE user CONTENT {
-                             uuid: $uuid,
-                             username: $username,
-                             password: crypto::argon2::generate($password),
-                             display_name: $display_name,
-                             role: 'user'
-                           }
-                         """,
-                         %{
-                           "uuid" => uuid,
-                           "username" => username,
-                           "password" => password,
-                           "display_name" => display_name
-                         }
-                       ) do
-                    {:ok, _json} ->
-                      conn
-                      |> put_session("blenny_user_id", uuid)
-                      |> put_session("blenny_user_role", "user")
-                      |> put_session("blenny_user_display_name", display_name)
-                      |> configure_session(renew: true)
-                      |> redirect(to: "/dashboard")
-
-                    {:error, reason} ->
-                      html(conn, ui_register("Registration failed: #{inspect(reason)}", token))
-                  end
-
-                {:error, reason} ->
-                  html(conn, ui_register("Registration failed: #{inspect(reason)}", token))
-              end
+            result ->
+              result
           end
       end
     end
@@ -324,7 +231,7 @@ defmodule BlennyExampleApp.Blenny.FormAuthSurreal do
   end
 
   def handle_avatar_upload(conn, %{"avatar" => _data}) do
-    {conn_pid, blob_pid, _bridge} = :persistent_term.get(@store_key)
+    {conn_pid, blob_pid} = :persistent_term.get(@store_key)
     user = conn.assigns.blenny_auth
 
     {:ok, key} = Blenny.Storage.Impl.FSBlob.set(blob_pid, "avatars", user.id, "", "image/png")
@@ -340,7 +247,7 @@ defmodule BlennyExampleApp.Blenny.FormAuthSurreal do
   end
 
   def handle_avatar_serve(conn, %{"user_id" => user_id}) do
-    {conn_pid, blob_pid, _bridge} = :persistent_term.get(@store_key)
+    {conn_pid, blob_pid} = :persistent_term.get(@store_key)
 
     if conn_pid == nil do
       conn |> send_resp(503, "Database unavailable") |> halt()
@@ -371,6 +278,55 @@ defmodule BlennyExampleApp.Blenny.FormAuthSurreal do
   end
 
   # ── SurrealQL helpers ────────────────────────────────────────────
+
+  defp do_register(conn, conn_pid, username, password, display_name, token) do
+    case query_one(conn_pid, "SELECT * FROM user WHERE username = $username", %{
+           "username" => username
+         }) do
+      {:ok, _existing} ->
+        html(conn, ui_register("Username already taken", token))
+
+      {:error, :not_found} ->
+        do_create_user(conn, conn_pid, username, password, display_name, token)
+
+      {:error, reason} ->
+        {:retry, reason}
+    end
+  end
+
+  defp do_create_user(conn, conn_pid, username, password, display_name, token) do
+    uuid = Blenny.Storage.UUID.generate()
+
+    case SurrealDB.query(
+           conn_pid,
+           """
+             CREATE user CONTENT {
+               uuid: $uuid,
+               username: $username,
+               password: crypto::argon2::generate($password),
+               display_name: $display_name,
+               role: 'user'
+             }
+           """,
+           %{
+             "uuid" => uuid,
+             "username" => username,
+             "password" => password,
+             "display_name" => display_name
+           }
+         ) do
+      {:ok, _json} ->
+        conn
+        |> put_session("blenny_user_id", uuid)
+        |> put_session("blenny_user_role", "user")
+        |> put_session("blenny_user_display_name", display_name)
+        |> configure_session(renew: true)
+        |> redirect(to: "/dashboard")
+
+      {:error, reason} ->
+        html(conn, ui_register("Registration failed: #{inspect(reason)}", token))
+    end
+  end
 
   defp query_one(conn, sql, vars \\ %{}) do
     case SurrealDB.query(conn, sql, vars) do

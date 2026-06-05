@@ -29,6 +29,12 @@ defmodule Blenny.SurrealDB.PublisherBridge do
         action: "CREATE" | "UPDATE" | "DELETE",
         data: %{...}  # the changed record
       }
+
+  ## Realtime notifications guide
+
+  See `guides/realtime_notifications.md` for a step-by-step walkthrough of
+  integrating PublisherBridge into a Blenny module to broadcast database
+  changes to SSE clients.
   """
 
   require Logger

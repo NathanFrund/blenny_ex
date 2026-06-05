@@ -15,13 +15,21 @@ defmodule BlennyEx.MixProject do
         links: %{"GitHub" => "https://github.com/NathanFrund/blenny_ex"},
         maintainers: ["Nathan Frund"]
       ],
-      deps: deps()
+      deps: deps(),
+      docs: docs()
     ]
   end
 
   def application do
     [
       extra_applications: [:logger]
+    ]
+  end
+
+  def docs do
+    [
+      main: "readme",
+      extras: ["guides/realtime_notifications.md"]
     ]
   end
 
