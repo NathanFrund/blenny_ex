@@ -98,7 +98,9 @@ defmodule Blenny.SurrealDB.PublisherBridge do
 
   @impl true
   def handle_call(:subscriptions, _from, state) do
-    subs = Enum.map(state.subscriptions, fn {table, intent} -> %{table: table, intent: intent} end)
+    subs =
+      Enum.map(state.subscriptions, fn {table, intent} -> %{table: table, intent: intent} end)
+
     {:reply, subs, state}
   end
 
@@ -108,7 +110,9 @@ defmodule Blenny.SurrealDB.PublisherBridge do
       {:noreply, state}
     else
       subscriptions = Map.put(state.subscriptions, table, intent)
-      {:noreply, %{state | subscriptions: subscriptions}, {:continue, {:subscribe_one, table, intent}}}
+
+      {:noreply, %{state | subscriptions: subscriptions},
+       {:continue, {:subscribe_one, table, intent}}}
     end
   end
 

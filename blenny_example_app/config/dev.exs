@@ -80,3 +80,19 @@ config :phoenix_live_view,
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
+
+# SurrealDB — local dev instance
+config :blenny_example_app, :surrealdb,
+  hostname: "localhost",
+  port: 8000,
+  username: "root",
+  password: "root",
+  namespace: "test",
+  database: "test"
+
+# Explicit module list — FormAuthSurreal uses SurrealDB, FormAuth uses memory/dets
+config :blenny_ex,
+  modules: [
+    BlennyExampleApp.Blenny.FormAuthSurreal,
+    BlennyExampleApp.Blenny.DashboardModule
+  ]

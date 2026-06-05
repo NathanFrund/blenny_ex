@@ -13,15 +13,25 @@ defmodule SurrealDB.ProtocolTest do
     end
 
     test "builds a query payload with vars" do
-      {id, json} = Protocol.build_payload("query", [sql: "SELECT * FROM user WHERE status = $1", vars: %{"status" => "active"}])
+      {id, json} =
+        Protocol.build_payload("query",
+          sql: "SELECT * FROM user WHERE status = $1",
+          vars: %{"status" => "active"}
+        )
+
       assert {:ok, decoded} = Jason.decode(json)
       assert decoded["method"] == "query"
-      assert decoded["params"] == ["SELECT * FROM user WHERE status = $1", %{"status" => "active"}]
+
+      assert decoded["params"] == [
+               "SELECT * FROM user WHERE status = $1",
+               %{"status" => "active"}
+             ]
+
       assert decoded["id"] == id
     end
 
     test "builds a signin payload" do
-      {id, json} = Protocol.build_payload("signin", [payload: %{user: "root", pass: "root"}])
+      {id, json} = Protocol.build_payload("signin", payload: %{user: "root", pass: "root"})
       assert {:ok, decoded} = Jason.decode(json)
       assert decoded["method"] == "signin"
       assert decoded["params"] == [%{"user" => "root", "pass" => "root"}]
@@ -29,7 +39,7 @@ defmodule SurrealDB.ProtocolTest do
     end
 
     test "builds a use payload" do
-      {id, json} = Protocol.build_payload("use", [ns: "test", db: "app"])
+      {id, json} = Protocol.build_payload("use", ns: "test", db: "app")
       assert {:ok, decoded} = Jason.decode(json)
       assert decoded["method"] == "use"
       assert decoded["params"] == ["test", "app"]
@@ -37,7 +47,7 @@ defmodule SurrealDB.ProtocolTest do
     end
 
     test "builds a create payload" do
-      {id, json} = Protocol.build_payload("create", [thing: "user", data: %{name: "Alice"}])
+      {id, json} = Protocol.build_payload("create", thing: "user", data: %{name: "Alice"})
       assert {:ok, decoded} = Jason.decode(json)
       assert decoded["method"] == "create"
       assert decoded["params"] == ["user", %{"name" => "Alice"}]
@@ -45,7 +55,7 @@ defmodule SurrealDB.ProtocolTest do
     end
 
     test "builds a delete payload" do
-      {id, json} = Protocol.build_payload("delete", [thing: "user:abc123"])
+      {id, json} = Protocol.build_payload("delete", thing: "user:abc123")
       assert {:ok, decoded} = Jason.decode(json)
       assert decoded["method"] == "delete"
       assert decoded["params"] == ["user:abc123"]
@@ -53,7 +63,7 @@ defmodule SurrealDB.ProtocolTest do
     end
 
     test "builds a kill payload" do
-      {id, json} = Protocol.build_payload("kill", [query_uuid: "abc-def"])
+      {id, json} = Protocol.build_payload("kill", query_uuid: "abc-def")
       assert {:ok, decoded} = Jason.decode(json)
       assert decoded["method"] == "kill"
       assert decoded["params"] == ["abc-def"]

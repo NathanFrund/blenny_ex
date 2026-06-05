@@ -97,8 +97,11 @@ defmodule Blenny.Storage.Impl.SurrealDB do
 
     Enum.each(schema, fn stmt ->
       case SurrealDB.query(conn, stmt) do
-        {:ok, _} -> :ok
-        {:error, reason} -> Logger.warning("[SurrealDB.Store] Schema setup warning: #{inspect(reason)}")
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("[SurrealDB.Store] Schema setup warning: #{inspect(reason)}")
       end
     end)
 
@@ -120,7 +123,9 @@ defmodule Blenny.Storage.Impl.SurrealDB do
   @impl true
   def handle_call({:find_by_username, username}, _from, state) do
     result =
-      case SurrealDB.query(state.conn, "SELECT * FROM user WHERE username = $username", %{"username" => username}) do
+      case SurrealDB.query(state.conn, "SELECT * FROM user WHERE username = $username", %{
+             "username" => username
+           }) do
         {:ok, %{"result" => [%{"result" => [user | _]}]}} -> map_user(user)
         {:ok, %{"result" => [%{"result" => []}]}} -> nil
         _ -> nil
@@ -145,9 +150,13 @@ defmodule Blenny.Storage.Impl.SurrealDB do
     }
 
     result =
-      case SurrealDB.query(state.conn, """
-      CREATE user CONTENT $data
-      """, %{"data" => user_data}) do
+      case SurrealDB.query(
+             state.conn,
+             """
+             CREATE user CONTENT $data
+             """,
+             %{"data" => user_data}
+           ) do
         {:ok, %{"result" => [%{"result" => [created]}]}} ->
           {:ok, map_user(created)}
 
@@ -164,7 +173,11 @@ defmodule Blenny.Storage.Impl.SurrealDB do
   @impl true
   def handle_call({:update_password_hash, id, new_hash}, _from, state) do
     result =
-      case SurrealDB.query(state.conn, "UPDATE user SET password_hash = $hash WHERE uuid = $id", %{"id" => id, "hash" => new_hash}) do
+      case SurrealDB.query(
+             state.conn,
+             "UPDATE user MERGE { password_hash: $hash } WHERE uuid = $id",
+             %{"id" => id, "hash" => new_hash}
+           ) do
         {:ok, %{"result" => [%{"result" => [_updated]}]}} -> :ok
         {:ok, %{"result" => [%{"result" => []}]}} -> {:error, :not_found}
         _ -> {:error, :not_found}
@@ -176,7 +189,14 @@ defmodule Blenny.Storage.Impl.SurrealDB do
   @impl true
   def handle_call({:update_avatar_key, id, key}, _from, state) do
     result =
-      case SurrealDB.query(state.conn, "UPDATE user SET avatar_key = $key WHERE uuid = $id", %{"id" => id, "key" => key}) do
+      case SurrealDB.query(
+             state.conn,
+             "UPDATE user MERGE { avatar_key: $key } WHERE uuid = $id",
+             %{
+               "id" => id,
+               "key" => key
+             }
+           ) do
         {:ok, %{"result" => [%{"result" => [_updated]}]}} -> :ok
         {:ok, %{"result" => [%{"result" => []}]}} -> {:error, :not_found}
         _ -> {:error, :not_found}

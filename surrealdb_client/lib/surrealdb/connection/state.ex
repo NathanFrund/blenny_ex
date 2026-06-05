@@ -52,7 +52,9 @@ defmodule SurrealDB.Connection.State do
 
   def delete_live_query(state, query_id) do
     case Map.pop(state.lq_running, query_id) do
-      {nil, _} -> state
+      {nil, _} ->
+        state
+
       {item, lq_running} ->
         lq_sql = MapSet.delete(state.lq_sql, {item.sql, item.callback})
         %{state | lq_running: lq_running, lq_sql: lq_sql}

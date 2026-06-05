@@ -25,12 +25,7 @@ defmodule BlennyExampleAppWeb.Router do
   scope "/" do
     pipe_through :browser
 
-    blenny_modules("",
-      modules: [
-        BlennyExampleApp.Blenny.FormAuth,
-        BlennyExampleApp.Blenny.DashboardModule
-      ]
-    )
+    blenny_modules("")
   end
 
   # SSE endpoint — no browser pipeline, fully-qualified module

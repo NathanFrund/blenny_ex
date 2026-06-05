@@ -31,7 +31,12 @@ defmodule SurrealDB.Connection.StateTest do
       callback = fn _, _ -> :ok end
 
       state = State.register_live_query(state, "LIVE SELECT * FROM user", "uuid-1", callback)
-      assert State.get_live_query(state, "uuid-1") == %{sql: "LIVE SELECT * FROM user", query_id: "uuid-1", callback: callback}
+
+      assert State.get_live_query(state, "uuid-1") == %{
+               sql: "LIVE SELECT * FROM user",
+               query_id: "uuid-1",
+               callback: callback
+             }
 
       state = State.delete_live_query(state, "uuid-1")
       assert State.get_live_query(state, "uuid-1") == nil
@@ -53,7 +58,10 @@ defmodule SurrealDB.Connection.StateTest do
 
     test "reset clears all live queries" do
       state = State.new([])
-      state = State.register_live_query(state, "LIVE SELECT * FROM user", "u1", fn _, _ -> :ok end)
+
+      state =
+        State.register_live_query(state, "LIVE SELECT * FROM user", "u1", fn _, _ -> :ok end)
+
       state = State.reset_live_queries(state)
       assert State.all_live_queries(state) == []
     end

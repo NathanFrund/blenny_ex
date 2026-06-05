@@ -135,30 +135,43 @@ defmodule SurrealDB.Connection do
     State.all_live_queries(:sys.get_state(pid))
   end
 
-  # ----- WebSockex callbacks -----
+  @doc """
+  Waits until the WebSocket connection is ready (handshake complete).
+  Returns `:ok` or `{:error, :timeout}`.
+  """
+  @spec wait_for_ready(pid(), pos_integer()) :: :ok | {:error, :timeout}
+  def wait_for_ready(pid, timeout \\ 5_000) do
+    deadline = System.monotonic_time() + System.convert_time_unit(timeout, :millisecond, :native)
+    wait_loop(pid, deadline)
+  end
 
-  @impl true
-  def handle_connect(_conn, state) do
-    config = state.config
-
-    Telemetry.connection_event(:connect, %{
-      hostname: config[:hostname],
-      port: config[:port]
-    })
-
+  @doc """
+  Authenticates a connection (signin + use). Must be called AFTER the
+  WebSocket handshake completes (`wait_for_ready/1` returns `:ok`).
+  """
+  @spec authenticate(pid()) :: :ok | {:error, term()}
+  def authenticate(pid) do
+    config = :sys.get_state(pid).config
     auth_payload = %{user: config[:username], pass: config[:password]}
     ns = config[:namespace]
     db = config[:database]
 
-    with {:ok, _} <- signin(self(), auth_payload),
-         {:ok, _} <- use(self(), ns, db) do
-      state = State.set_auth_ready(state, true)
-      {:ok, re_subscribe_live_queries(state)}
-    else
-      {:error, reason} ->
-        Logger.warning("[SurrealDB] Auth failed: #{inspect(reason)}")
-        {:ok, state}
+    with {:ok, _} <- signin(pid, auth_payload),
+         {:ok, _} <- use(pid, ns, db) do
+      :ok
     end
+  end
+
+  # ----- WebSockex callbacks -----
+
+  @impl true
+  def handle_connect(_conn, state) do
+    Telemetry.connection_event(:connect, %{
+      hostname: state.config[:hostname],
+      port: state.config[:port]
+    })
+
+    {:ok, state}
   end
 
   @impl true
@@ -227,7 +240,9 @@ defmodule SurrealDB.Connection do
     url = "#{scheme}://#{hostname}:#{port}/rpc"
 
     state = State.new(config)
-    apply(WebSockex, fun_name, [url, __MODULE__, state, [name: config[:name]]])
+    Process.put(:surrealdb_config, config)
+    ws_opts = if name = config[:name], do: [name: name], else: []
+    apply(WebSockex, fun_name, [url, __MODULE__, state, ws_opts])
   end
 
   defp exec_method(pid, method, args, opts) do
@@ -235,17 +250,37 @@ defmodule SurrealDB.Connection do
     Telemetry.query_start(method, args)
 
     id = Protocol.request_id()
-    config = :sys.get_state(pid).config
+
+    config =
+      if pid == self(), do: Process.get(:surrealdb_config), else: :sys.get_state(pid).config
+
     timeout = Keyword.get(opts, :timeout, config[:query_timeout] || 5_000)
 
     task =
       Task.async(fn ->
         receive do
           {:query_result, json, ^id} ->
-            if Map.has_key?(json, "error") do
-              {:error, json["error"]}
-            else
-              {:ok, json}
+            cond do
+              Map.has_key?(json, "error") ->
+                {:error, json["error"]}
+
+              method == "query" and is_list(json["result"]) ->
+                errors =
+                  Enum.filter(json["result"], &match?(%{"status" => "ERR"}, &1))
+
+                if errors == [] do
+                  {:ok, json}
+                else
+                  details =
+                    Enum.map(errors, fn err ->
+                      err["detail"] || err["message"] || err["info"] || inspect(err)
+                    end)
+
+                  {:error, {:sql_error, details}}
+                end
+
+              true ->
+                {:ok, json}
             end
 
           {:query_error, reason, ^id} ->
@@ -279,15 +314,16 @@ defmodule SurrealDB.Connection do
     end
   end
 
-  defp re_subscribe_live_queries(state) do
-    if MapSet.size(state.lq_sql) > 0 do
-      Logger.debug("[SurrealDB] Re-subscribing #{MapSet.size(state.lq_sql)} live queries")
+  defp wait_loop(pid, deadline) do
+    if System.monotonic_time() >= deadline, do: {:error, :timeout}
+
+    case ping(pid) do
+      {:ok, _} ->
+        :ok
+
+      _ ->
+        Process.sleep(100)
+        wait_loop(pid, deadline)
     end
-
-    Enum.each(state.lq_sql, fn {sql, _callback} ->
-      exec_method(self(), "query", [sql: sql, vars: %{}], [])
-    end)
-
-    state
   end
 end

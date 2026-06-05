@@ -22,7 +22,9 @@ defmodule Blenny.SurrealDB.PublisherBridgeTest do
       exports = PublisherBridge.__info__(:functions)
       assert Keyword.has_key?(exports, :start_link) and Keyword.get(exports, :start_link) == 1
       assert Keyword.has_key?(exports, :unsubscribe) and Keyword.get(exports, :unsubscribe) == 2
-      assert Keyword.has_key?(exports, :subscriptions) and Keyword.get(exports, :subscriptions) == 1
+
+      assert Keyword.has_key?(exports, :subscriptions) and
+               Keyword.get(exports, :subscriptions) == 1
     end
   end
 end
