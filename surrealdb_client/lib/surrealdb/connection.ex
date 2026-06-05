@@ -341,7 +341,7 @@ defmodule SurrealDB.Connection do
   defp delete_if_task(state, id), do: State.delete_task(state, id)
 
   defp notify_if_live_query(state, json) do
-    with %{"result" => %{"action" => action, "id" => lq_id}} <- json,
+    with %{"action" => action, "id" => lq_id} <- Map.get(json, "result"),
          %{callback: callback} <- State.get_live_query(state, lq_id) do
       Telemetry.live_query_notification(lq_id, action, json)
       callback.(json, lq_id)
